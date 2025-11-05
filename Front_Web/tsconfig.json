@@ -8,6 +8,7 @@
     "strict": true,
     "baseUrl": ".",
     "paths": { "@/*": ["./*"] },
+    "skipLibCheck": true,
     "noEmit": true
   },
   "include": ["**/*.ts", "**/*.tsx"]
