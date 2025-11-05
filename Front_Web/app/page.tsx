@@ -1,4 +1,4 @@
-import { getSupabaseServer } from "@/lib/supabaseClient";
+import { getSupabaseServer } from "/lib/supabaseClient";
 
 export const revalidate = 0; // SSR sem cache
 
