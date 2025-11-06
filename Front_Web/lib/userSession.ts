@@ -4,11 +4,9 @@
  * Usa UUID armazenado no localStorage para identificação
  */
 
-import {
-  USER_EMAIL_STORAGE_KEY,
-  USER_ID_STORAGE_KEY,
-  USER_NAME_STORAGE_KEY,
-} from "./sessionKeys";
+const USER_ID_KEY = 'financeiro_user_id';
+const USER_NAME_KEY = 'financeiro_user_name';
+const USER_EMAIL_KEY = 'financeiro_user_email';
 
 /**
  * Obtém o ID do usuário atual
@@ -55,6 +53,17 @@ export function getUserEmail(): string | null {
 }
 
 /**
+ * Obtém o e-mail do usuário (se definido)
+ */
+export function getUserEmail(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return localStorage.getItem(USER_EMAIL_KEY);
+}
+
+/**
  * Define o nome/apelido do usuário
  */
 export function setUserName(name: string): void {
@@ -74,6 +83,17 @@ export function setUserEmail(email: string): void {
   }
 
   localStorage.setItem(USER_EMAIL_STORAGE_KEY, email);
+}
+
+/**
+ * Define o e-mail do usuário
+ */
+export function setUserEmail(email: string): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  localStorage.setItem(USER_EMAIL_KEY, email);
 }
 
 /**
@@ -99,6 +119,17 @@ export function clearUserEmail(): void {
 }
 
 /**
+ * Remove o e-mail do usuário
+ */
+export function clearUserEmail(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  localStorage.removeItem(USER_EMAIL_KEY);
+}
+
+/**
  * Limpa toda a sessão do usuário
  * CUIDADO: Isso fará com que o usuário perca acesso aos seus dados
  */
@@ -107,9 +138,9 @@ export function clearUserSession(): void {
     return;
   }
 
-  localStorage.removeItem(USER_ID_STORAGE_KEY);
-  localStorage.removeItem(USER_NAME_STORAGE_KEY);
-  localStorage.removeItem(USER_EMAIL_STORAGE_KEY);
+  localStorage.removeItem(USER_ID_KEY);
+  localStorage.removeItem(USER_NAME_KEY);
+  localStorage.removeItem(USER_EMAIL_KEY);
 }
 
 /**
