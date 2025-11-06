@@ -15,7 +15,6 @@ import {
   getOrCreateUser,
   type UsuarioRow,
 } from '@/lib/supabaseClient';
-import { traduzirErroSupabase } from '@/lib/supabaseErrors';
 
 type Usuario = Pick<UsuarioRow, 'usr_id' | 'usr_nome' | 'usr_email' | 'usr_ativo'>;
 
@@ -84,11 +83,13 @@ export default function CadastroUsuarioPage() {
 
       if (error) {
         console.error('Erro ao salvar usuário:', error);
+        const isPermissionDenied = error.message
+          ?.toLowerCase()
+          .includes('permission denied');
         setFeedback(
-          traduzirErroSupabase(
-            error,
-            'Não foi possível salvar os dados. Verifique sua conexão e tente novamente.'
-          )
+          isPermissionDenied
+            ? 'Permissão negada para atualizar seus dados. Recarregue a página após aplicar as permissões no Supabase.'
+            : 'Não foi possível salvar os dados. Verifique sua conexão e tente novamente.'
         );
         return;
       }
