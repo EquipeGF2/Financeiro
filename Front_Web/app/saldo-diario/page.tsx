@@ -14,15 +14,15 @@ import { formatCurrency } from '@/lib/mathParser';
 
 // Tipos
 type AreaRelacionada = {
-  are_nome?: string | null;
+  are_nome: string | null;
 };
 
 type ContaReceitaRelacionada = {
-  ctr_nome?: string | null;
+  ctr_nome: string | null;
 };
 
 type BancoRelacionado = {
-  ban_nome?: string | null;
+  ban_nome: string | null;
 };
 
 interface PagamentoArea {
@@ -124,61 +124,89 @@ export default function SaldoDiarioPage() {
       ]);
 
       type PagamentoAreaResponse = Omit<PagamentoArea, 'are_areas'> & {
-        are_areas: MaybeArray<AreaRelacionada>;
+        are_areas: AreaRelacionada | AreaRelacionada[] | null;
       };
 
-      const pagamentosAreaData = ((pagAreaRes.data ?? []) as PagamentoAreaResponse[]).map<PagamentoArea>((item) => ({
-        pag_id: item.pag_id,
-        pag_valor: Number(item.pag_valor) || 0,
-        pag_descricao: item.pag_descricao,
-        are_areas: normalizeRelation(item.are_areas).map((area) => ({
-          are_nome: area.are_nome ?? null,
-        })),
-      }));
+      const pagamentosAreaData = ((pagAreaRes.data ?? []) as PagamentoAreaResponse[]).map<PagamentoArea>((item) => {
+        const areasRelacionadas = item.are_areas;
+        const normalizadas: AreaRelacionada[] = Array.isArray(areasRelacionadas)
+          ? areasRelacionadas.map((area) => ({ are_nome: area?.are_nome ?? null }))
+          : areasRelacionadas
+            ? [{ are_nome: areasRelacionadas.are_nome ?? null }]
+            : [];
+
+        return {
+          pag_id: item.pag_id,
+          pag_valor: item.pag_valor,
+          pag_descricao: item.pag_descricao,
+          are_areas: normalizadas,
+        };
+      });
 
       setPagamentosArea(pagamentosAreaData);
 
       type ReceitaResponse = Omit<Receita, 'ctr_contas_receita'> & {
-        ctr_contas_receita: MaybeArray<ContaReceitaRelacionada>;
+        ctr_contas_receita: ContaReceitaRelacionada | ContaReceitaRelacionada[] | null;
       };
 
-      const receitasData = ((recRes.data ?? []) as ReceitaResponse[]).map<Receita>((item) => ({
-        rec_id: item.rec_id,
-        rec_valor: Number(item.rec_valor) || 0,
-        rec_descricao: item.rec_descricao,
-        ctr_contas_receita: normalizeRelation(item.ctr_contas_receita).map((conta) => ({
-          ctr_nome: conta.ctr_nome ?? null,
-        })),
-      }));
+      const receitasData = ((recRes.data ?? []) as ReceitaResponse[]).map<Receita>((item) => {
+        const contasRelacionadas = item.ctr_contas_receita;
+        const normalizadas: ContaReceitaRelacionada[] = Array.isArray(contasRelacionadas)
+          ? contasRelacionadas.map((conta) => ({ ctr_nome: conta?.ctr_nome ?? null }))
+          : contasRelacionadas
+            ? [{ ctr_nome: contasRelacionadas.ctr_nome ?? null }]
+            : [];
+
+        return {
+          rec_id: item.rec_id,
+          rec_valor: item.rec_valor,
+          rec_descricao: item.rec_descricao,
+          ctr_contas_receita: normalizadas,
+        };
+      });
 
       setReceitas(receitasData);
 
       type PagamentoBancoResponse = Omit<PagamentoBanco, 'ban_bancos'> & {
-        ban_bancos: MaybeArray<BancoRelacionado>;
+        ban_bancos: BancoRelacionado | BancoRelacionado[] | null;
       };
 
-      const pagamentosBancoData = ((pagBancoRes.data ?? []) as PagamentoBancoResponse[]).map<PagamentoBanco>((item) => ({
-        pbk_id: item.pbk_id,
-        pbk_valor: Number(item.pbk_valor) || 0,
-        pbk_descricao: item.pbk_descricao,
-        ban_bancos: normalizeRelation(item.ban_bancos).map((banco) => ({
-          ban_nome: banco.ban_nome ?? null,
-        })),
-      }));
+      const pagamentosBancoData = ((pagBancoRes.data ?? []) as PagamentoBancoResponse[]).map<PagamentoBanco>((item) => {
+        const bancosRelacionados = item.ban_bancos;
+        const normalizados: BancoRelacionado[] = Array.isArray(bancosRelacionados)
+          ? bancosRelacionados.map((banco) => ({ ban_nome: banco?.ban_nome ?? null }))
+          : bancosRelacionados
+            ? [{ ban_nome: bancosRelacionados.ban_nome ?? null }]
+            : [];
+
+        return {
+          pbk_id: item.pbk_id,
+          pbk_valor: item.pbk_valor,
+          pbk_descricao: item.pbk_descricao,
+          ban_bancos: normalizados,
+        };
+      });
 
       setPagamentosBanco(pagamentosBancoData);
 
       type SaldoBancoResponse = Omit<SaldoBanco, 'ban_bancos'> & {
-        ban_bancos: MaybeArray<BancoRelacionado>;
+        ban_bancos: BancoRelacionado | BancoRelacionado[] | null;
       };
 
-      const saldosBancoData = ((saldoRes.data ?? []) as SaldoBancoResponse[]).map<SaldoBanco>((item) => ({
-        sdb_id: item.sdb_id,
-        sdb_saldo: Number(item.sdb_saldo) || 0,
-        ban_bancos: normalizeRelation(item.ban_bancos).map((banco) => ({
-          ban_nome: banco.ban_nome ?? null,
-        })),
-      }));
+      const saldosBancoData = ((saldoRes.data ?? []) as SaldoBancoResponse[]).map<SaldoBanco>((item) => {
+        const bancosRelacionados = item.ban_bancos;
+        const normalizados: BancoRelacionado[] = Array.isArray(bancosRelacionados)
+          ? bancosRelacionados.map((banco) => ({ ban_nome: banco?.ban_nome ?? null }))
+          : bancosRelacionados
+            ? [{ ban_nome: bancosRelacionados.ban_nome ?? null }]
+            : [];
+
+        return {
+          sdb_id: item.sdb_id,
+          sdb_saldo: item.sdb_saldo,
+          ban_bancos: normalizados,
+        };
+      });
 
       setSaldosBanco(saldosBancoData);
     } catch (error) {
