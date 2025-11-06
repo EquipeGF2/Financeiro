@@ -251,7 +251,7 @@ export default function SaldoDiarioPage() {
   if (loading) {
     return (
       <>
-        <Header title="Saldo Diário" />
+        <Header title="Movimentação Diária" />
         <div className="page-content flex items-center justify-center h-96">
           <Loading size="lg" text="Carregando dados..." />
         </div>
@@ -262,8 +262,8 @@ export default function SaldoDiarioPage() {
   return (
     <>
       <Header
-        title="Saldo Diário"
-        subtitle={`Dashboard financeiro - ${new Date().toLocaleDateString('pt-BR')}`}
+        title="Movimentação Diária"
+        subtitle={`Resumo operacional do dia - ${new Date().toLocaleDateString('pt-BR')}`}
         actions={
           <Button variant="secondary" onClick={loadData}>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
