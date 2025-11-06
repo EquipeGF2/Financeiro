@@ -30,19 +30,24 @@ jobs:
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      - name: Instalar Supabase CLI via npm
-        run: npm install -g supabase
+      # Instala a Supabase CLI baixando o binário oficial (forma suportada)
+      - name: Instalar Supabase CLI (binary)
+        run: |
+          curl -L https://github.com/supabase/cli/releases/latest/download/supabase_linux_amd64.tar.gz -o /tmp/supabase.tar.gz
+          sudo tar -xzf /tmp/supabase.tar.gz -C /usr/local/bin supabase
+          supabase --version
 
       - name: Linkar projeto Supabase
-        run: supabase link --project-ref $PROJECT_REF --password $SUPABASE_DB_PASSWORD
+        run: supabase link --project-ref "$PROJECT_REF" --password "$SUPABASE_DB_PASSWORD"
 
+      # Sem --remote: por padrão empurra para o projeto linkado
       - name: Aplicar migrations no banco remoto
-        run: supabase db push --remote
+        run: supabase db push
 
       - name: Deploy edge functions (optional)
-        run: supabase functions deploy --project-ref $PROJECT_REF || true
+        run: supabase functions deploy --project-ref "$PROJECT_REF" || true
 
       - name: Gerar Types para Front_Web
         run: |
           mkdir -p Front_Web/src/lib
-          supabase gen types typescript --project-id $PROJECT_REF --schema financas > Front_Web/src/lib/database.types.ts
+          supabase gen types typescript --project-id "$PROJECT_REF" --schema financas > Front_Web/src/lib/database.types.ts
