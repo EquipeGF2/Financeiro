@@ -26,13 +26,13 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
 
-    steps:
+       steps:
       - uses: actions/checkout@v4
 
       # Instala o CLI no runner
       - uses: supabase/setup-cli@v1
-      with:
-        version: 1.158.6
+        with:
+          version: 1.158.6
 
       # Linka o repo ao projeto (usa token + senha do DB)
       - name: Link project
@@ -51,3 +51,4 @@ jobs:
         run: |
           mkdir -p Front_Web/src/lib
           supabase gen types typescript --project-id $PROJECT_REF --schema financas > Front_Web/src/lib/database.types.ts
+
