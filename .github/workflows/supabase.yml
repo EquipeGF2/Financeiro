@@ -30,10 +30,8 @@ jobs:
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      - name: Instalar Supabase CLI
-        uses: supabase/setup-cli@v1
-        with:
-          version: 1.158.6
+      - name: Instalar Supabase CLI via npm
+        run: npm install -g supabase
 
       - name: Linkar projeto Supabase
         run: supabase link --project-ref $PROJECT_REF --password $SUPABASE_DB_PASSWORD
