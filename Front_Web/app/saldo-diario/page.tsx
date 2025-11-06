@@ -52,6 +52,17 @@ interface SaldoBanco {
   ban_bancos: BancoRelacionado[];
 }
 
+type MaybeArray<T> = T | T[] | null | undefined;
+
+const normalizeRelation = <T extends Record<string, unknown>>(value: MaybeArray<T>) => {
+  if (!value) {
+    return [] as T[];
+  }
+
+  const arrayValue = Array.isArray(value) ? value : [value];
+  return arrayValue.map((item) => ({ ...item })) as T[];
+};
+
 export default function SaldoDiarioPage() {
   const [loading, setLoading] = useState(true);
   const [pagamentosArea, setPagamentosArea] = useState<PagamentoArea[]>([]);
