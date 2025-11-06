@@ -11,8 +11,18 @@ import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Modal } from '../ui/Modal';
 
+interface UserSessionData {
+  userId: string;
+  userName: string | null;
+  displayName: string;
+}
+
 export const UserIdentifier: React.FC = () => {
-  const [session, setSession] = useState({ userId: '', userName: '', displayName: '' });
+  const [session, setSession] = useState<UserSessionData>({
+    userId: '',
+    userName: null,
+    displayName: 'Usuário Anônimo',
+  });
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newName, setNewName] = useState('');
 

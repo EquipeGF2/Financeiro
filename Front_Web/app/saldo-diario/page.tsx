@@ -13,32 +13,55 @@ import { getUserSession } from '@/lib/userSession';
 import { formatCurrency } from '@/lib/mathParser';
 
 // Tipos
+type AreaRelacionada = {
+  are_nome?: string | null;
+};
+
+type ContaReceitaRelacionada = {
+  ctr_nome?: string | null;
+};
+
+type BancoRelacionado = {
+  ban_nome?: string | null;
+};
+
 interface PagamentoArea {
   pag_id: number;
   pag_valor: number;
   pag_descricao: string;
-  are_areas: { are_nome: string };
+  are_areas: AreaRelacionada[];
 }
 
 interface Receita {
   rec_id: number;
   rec_valor: number;
   rec_descricao: string;
-  ctr_contas_receita: { ctr_nome: string };
+  ctr_contas_receita: ContaReceitaRelacionada[];
 }
 
 interface PagamentoBanco {
   pbk_id: number;
   pbk_valor: number;
   pbk_descricao: string;
-  ban_bancos: { ban_nome: string };
+  ban_bancos: BancoRelacionado[];
 }
 
 interface SaldoBanco {
   sdb_id: number;
   sdb_saldo: number;
-  ban_bancos: { ban_nome: string };
+  ban_bancos: BancoRelacionado[];
 }
+
+type MaybeArray<T> = T | T[] | null | undefined;
+
+const normalizeRelation = <T extends Record<string, unknown>>(value: MaybeArray<T>) => {
+  if (!value) {
+    return [] as T[];
+  }
+
+  const arrayValue = Array.isArray(value) ? value : [value];
+  return arrayValue.map((item) => ({ ...item })) as T[];
+};
 
 export default function SaldoDiarioPage() {
   const [loading, setLoading] = useState(true);
@@ -100,10 +123,64 @@ export default function SaldoDiarioPage() {
           .limit(10),
       ]);
 
-      setPagamentosArea((pagAreaRes.data as PagamentoArea[]) || []);
-      setReceitas((recRes.data as Receita[]) || []);
-      setPagamentosBanco((pagBancoRes.data as PagamentoBanco[]) || []);
-      setSaldosBanco((saldoRes.data as SaldoBanco[]) || []);
+      type PagamentoAreaResponse = Omit<PagamentoArea, 'are_areas'> & {
+        are_areas: MaybeArray<AreaRelacionada>;
+      };
+
+      const pagamentosAreaData = ((pagAreaRes.data ?? []) as PagamentoAreaResponse[]).map<PagamentoArea>((item) => ({
+        pag_id: item.pag_id,
+        pag_valor: Number(item.pag_valor) || 0,
+        pag_descricao: item.pag_descricao,
+        are_areas: normalizeRelation(item.are_areas).map((area) => ({
+          are_nome: area.are_nome ?? null,
+        })),
+      }));
+
+      setPagamentosArea(pagamentosAreaData);
+
+      type ReceitaResponse = Omit<Receita, 'ctr_contas_receita'> & {
+        ctr_contas_receita: MaybeArray<ContaReceitaRelacionada>;
+      };
+
+      const receitasData = ((recRes.data ?? []) as ReceitaResponse[]).map<Receita>((item) => ({
+        rec_id: item.rec_id,
+        rec_valor: Number(item.rec_valor) || 0,
+        rec_descricao: item.rec_descricao,
+        ctr_contas_receita: normalizeRelation(item.ctr_contas_receita).map((conta) => ({
+          ctr_nome: conta.ctr_nome ?? null,
+        })),
+      }));
+
+      setReceitas(receitasData);
+
+      type PagamentoBancoResponse = Omit<PagamentoBanco, 'ban_bancos'> & {
+        ban_bancos: MaybeArray<BancoRelacionado>;
+      };
+
+      const pagamentosBancoData = ((pagBancoRes.data ?? []) as PagamentoBancoResponse[]).map<PagamentoBanco>((item) => ({
+        pbk_id: item.pbk_id,
+        pbk_valor: Number(item.pbk_valor) || 0,
+        pbk_descricao: item.pbk_descricao,
+        ban_bancos: normalizeRelation(item.ban_bancos).map((banco) => ({
+          ban_nome: banco.ban_nome ?? null,
+        })),
+      }));
+
+      setPagamentosBanco(pagamentosBancoData);
+
+      type SaldoBancoResponse = Omit<SaldoBanco, 'ban_bancos'> & {
+        ban_bancos: MaybeArray<BancoRelacionado>;
+      };
+
+      const saldosBancoData = ((saldoRes.data ?? []) as SaldoBancoResponse[]).map<SaldoBanco>((item) => ({
+        sdb_id: item.sdb_id,
+        sdb_saldo: Number(item.sdb_saldo) || 0,
+        ban_bancos: normalizeRelation(item.ban_bancos).map((banco) => ({
+          ban_nome: banco.ban_nome ?? null,
+        })),
+      }));
+
+      setSaldosBanco(saldosBancoData);
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
     } finally {
@@ -169,7 +246,7 @@ export default function SaldoDiarioPage() {
                   >
                     <div className="flex-1">
                       <p className="font-medium text-gray-900">
-                        {pag.are_areas?.are_nome || 'Área removida'}
+                        {pag.are_areas[0]?.are_nome ?? 'Área removida'}
                       </p>
                       <p className="text-sm text-gray-500">{pag.pag_descricao}</p>
                     </div>
@@ -206,7 +283,7 @@ export default function SaldoDiarioPage() {
                   >
                     <div className="flex-1">
                       <p className="font-medium text-gray-900">
-                        {rec.ctr_contas_receita?.ctr_nome || 'Conta removida'}
+                        {rec.ctr_contas_receita[0]?.ctr_nome ?? 'Conta removida'}
                       </p>
                       <p className="text-sm text-gray-500">{rec.rec_descricao}</p>
                     </div>
@@ -243,7 +320,7 @@ export default function SaldoDiarioPage() {
                   >
                     <div className="flex-1">
                       <p className="font-medium text-gray-900">
-                        {pag.ban_bancos?.ban_nome || 'Banco removido'}
+                        {pag.ban_bancos[0]?.ban_nome ?? 'Banco removido'}
                       </p>
                       <p className="text-sm text-gray-500">{pag.pbk_descricao}</p>
                     </div>
@@ -279,7 +356,7 @@ export default function SaldoDiarioPage() {
                     className="flex justify-between items-start p-3 bg-gray-50 rounded-md"
                   >
                     <p className="font-medium text-gray-900">
-                      {saldo.ban_bancos?.ban_nome || 'Banco removido'}
+                      {saldo.ban_bancos[0]?.ban_nome ?? 'Banco removido'}
                     </p>
                     <span
                       className={`font-semibold ${
