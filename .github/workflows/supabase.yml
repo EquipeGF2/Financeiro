@@ -31,8 +31,8 @@ jobs:
 
       # Instala o CLI no runner
       - uses: supabase/setup-cli@v1
-        with:
-          version: latest
+      with:
+        version: 1.158.6
 
       # Linka o repo ao projeto (usa token + senha do DB)
       - name: Link project
