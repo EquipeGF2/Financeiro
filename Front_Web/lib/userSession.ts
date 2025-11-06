@@ -1,7 +1,6 @@
 /**
  * userSession.ts
- * Gerenciamento de sessão de usuário sem login
- * Usa UUID armazenado no localStorage para identificação
+ * Gerenciamento de sessão de usuário sem login usando localStorage
  */
 
 const USER_ID_KEY = 'financeiro_user_id';
@@ -9,8 +8,8 @@ const USER_NAME_KEY = 'financeiro_user_name';
 const USER_EMAIL_KEY = 'financeiro_user_email';
 
 /**
- * Obtém o ID do usuário atual
- * Se não existir, gera um novo UUID e armazena
+ * Obtém o ID do usuário atual.
+ * Se não existir, gera um novo UUID e armazena.
  */
 export function getUserId(): string {
   if (typeof window === 'undefined') {
@@ -34,9 +33,9 @@ export function getUserId(): string {
  * Obtém o nome/apelido do usuário (se definido)
  */
 export function getUserName(): string | null {
-  if (typeof window === 'undefined') {
-    return null;
-  }
+  const value = safeGetItem(USER_NAME_STORAGE_KEY);
+  return value && value.trim().length > 0 ? value : null;
+}
 
   return localStorage.getItem(USER_NAME_STORAGE_KEY);
 }
@@ -67,7 +66,8 @@ export function getUserEmail(): string | null {
  * Define o nome/apelido do usuário
  */
 export function setUserName(name: string): void {
-  if (typeof window === 'undefined') {
+  if (!name || name.trim().length === 0) {
+    safeRemoveItem(USER_NAME_STORAGE_KEY);
     return;
   }
 
@@ -97,10 +97,11 @@ export function setUserEmail(email: string): void {
 }
 
 /**
- * Remove o nome do usuário
+ * Define o e-mail do usuário
  */
-export function clearUserName(): void {
-  if (typeof window === 'undefined') {
+export function setUserEmail(email: string): void {
+  if (!email || email.trim().length === 0) {
+    safeRemoveItem(USER_EMAIL_STORAGE_KEY);
     return;
   }
 
@@ -143,10 +144,21 @@ export function clearUserSession(): void {
   localStorage.removeItem(USER_EMAIL_KEY);
 }
 
+export type UserSessionSnapshot = {
+  userId: string;
+  userName: string | null;
+  userEmail: string | null;
+  displayName: string;
+};
+
 /**
  * Retorna informações completas da sessão
  */
-export function getUserSession() {
+export function getUserSession(): UserSessionSnapshot {
+  const userId = getUserId();
+  const userName = getUserName();
+  const userEmail = getUserEmail();
+
   return {
     userId: getUserId(),
     userName: getUserName(),
