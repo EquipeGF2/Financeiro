@@ -1,30 +1,79 @@
 /**
  * userSession.ts
- * Gerenciamento de sessão de usuário sem login
- * Usa UUID armazenado no localStorage para identificação
+ * Gerenciamento de sessão de usuário sem login usando localStorage
  */
 
-const USER_ID_KEY = 'financeiro_user_id';
-const USER_NAME_KEY = 'financeiro_user_name';
+import {
+  USER_EMAIL_STORAGE_KEY,
+  USER_ID_STORAGE_KEY,
+  USER_NAME_STORAGE_KEY,
+} from "./sessionKeys";
 
-/**
- * Obtém o ID do usuário atual
- * Se não existir, gera um novo UUID e armazena
- */
-export function getUserId(): string {
-  if (typeof window === 'undefined') {
-    // Server-side: retorna vazio ou um valor padrão
-    return '';
+const isBrowser = typeof window !== "undefined";
+
+function safeGetItem(key: string): string | null {
+  if (!isBrowser) {
+    return null;
   }
 
-  const stored = localStorage.getItem(USER_ID_KEY);
-  if (stored) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch (error) {
+    console.warn("Não foi possível ler o item da sessão.", { key, error });
+    return null;
+  }
+}
+
+function safeSetItem(key: string, value: string): void {
+  if (!isBrowser) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(key, value);
+  } catch (error) {
+    console.warn("Não foi possível gravar o item da sessão.", { key, error });
+  }
+}
+
+function safeRemoveItem(key: string): void {
+  if (!isBrowser) {
+    return;
+  }
+
+  try {
+    window.localStorage.removeItem(key);
+  } catch (error) {
+    console.warn("Não foi possível remover o item da sessão.", { key, error });
+  }
+}
+
+function generateClientUuid(): string {
+  if (!isBrowser) {
+    return "";
+  }
+
+  if (typeof window.crypto?.randomUUID === "function") {
+    return window.crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/**
+ * Obtém o ID do usuário atual.
+ * Se não existir, gera um novo UUID e armazena.
+ */
+export function getUserId(): string {
+  const stored = safeGetItem(USER_ID_STORAGE_KEY);
+  if (stored && stored.trim().length > 0) {
     return stored;
   }
 
-  // Gera novo UUID
-  const newId = crypto.randomUUID();
-  localStorage.setItem(USER_ID_KEY, newId);
+  const newId = generateClientUuid();
+  if (newId) {
+    safeSetItem(USER_ID_STORAGE_KEY, newId);
+  }
 
   return newId;
 }
@@ -33,33 +82,54 @@ export function getUserId(): string {
  * Obtém o nome/apelido do usuário (se definido)
  */
 export function getUserName(): string | null {
-  if (typeof window === 'undefined') {
-    return null;
-  }
+  const value = safeGetItem(USER_NAME_STORAGE_KEY);
+  return value && value.trim().length > 0 ? value : null;
+}
 
-  return localStorage.getItem(USER_NAME_KEY);
+/**
+ * Obtém o e-mail do usuário (se definido)
+ */
+export function getUserEmail(): string | null {
+  const value = safeGetItem(USER_EMAIL_STORAGE_KEY);
+  return value && value.trim().length > 0 ? value : null;
 }
 
 /**
  * Define o nome/apelido do usuário
  */
 export function setUserName(name: string): void {
-  if (typeof window === 'undefined') {
+  if (!name || name.trim().length === 0) {
+    safeRemoveItem(USER_NAME_STORAGE_KEY);
     return;
   }
 
-  localStorage.setItem(USER_NAME_KEY, name);
+  safeSetItem(USER_NAME_STORAGE_KEY, name.trim());
+}
+
+/**
+ * Define o e-mail do usuário
+ */
+export function setUserEmail(email: string): void {
+  if (!email || email.trim().length === 0) {
+    safeRemoveItem(USER_EMAIL_STORAGE_KEY);
+    return;
+  }
+
+  safeSetItem(USER_EMAIL_STORAGE_KEY, email.trim());
 }
 
 /**
  * Remove o nome do usuário
  */
 export function clearUserName(): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
+  safeRemoveItem(USER_NAME_STORAGE_KEY);
+}
 
-  localStorage.removeItem(USER_NAME_KEY);
+/**
+ * Remove o e-mail do usuário
+ */
+export function clearUserEmail(): void {
+  safeRemoveItem(USER_EMAIL_STORAGE_KEY);
 }
 
 /**
@@ -67,22 +137,31 @@ export function clearUserName(): void {
  * CUIDADO: Isso fará com que o usuário perca acesso aos seus dados
  */
 export function clearUserSession(): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  localStorage.removeItem(USER_ID_KEY);
-  localStorage.removeItem(USER_NAME_KEY);
+  safeRemoveItem(USER_ID_STORAGE_KEY);
+  safeRemoveItem(USER_NAME_STORAGE_KEY);
+  safeRemoveItem(USER_EMAIL_STORAGE_KEY);
 }
+
+export type UserSessionSnapshot = {
+  userId: string;
+  userName: string | null;
+  userEmail: string | null;
+  displayName: string;
+};
 
 /**
  * Retorna informações completas da sessão
  */
-export function getUserSession() {
+export function getUserSession(): UserSessionSnapshot {
+  const userId = getUserId();
+  const userName = getUserName();
+  const userEmail = getUserEmail();
+
   return {
-    userId: getUserId(),
-    userName: getUserName(),
-    displayName: getUserName() || 'Usuário Anônimo',
+    userId,
+    userName,
+    userEmail,
+    displayName: userName || userEmail || "Usuário Anônimo",
   };
 }
 
@@ -90,9 +169,6 @@ export function getUserSession() {
  * Verifica se o usuário tem sessão ativa
  */
 export function hasActiveSession(): boolean {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-
-  return !!localStorage.getItem(USER_ID_KEY);
+  const stored = safeGetItem(USER_ID_STORAGE_KEY);
+  return !!(stored && stored.trim().length > 0);
 }
