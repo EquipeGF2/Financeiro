@@ -18,14 +18,14 @@ export function getUserId(): string {
     return '';
   }
 
-  const stored = localStorage.getItem(USER_ID_KEY);
+  const stored = localStorage.getItem(USER_ID_STORAGE_KEY);
   if (stored) {
     return stored;
   }
 
   // Gera novo UUID
   const newId = crypto.randomUUID();
-  localStorage.setItem(USER_ID_KEY, newId);
+  localStorage.setItem(USER_ID_STORAGE_KEY, newId);
 
   return newId;
 }
@@ -38,7 +38,18 @@ export function getUserName(): string | null {
     return null;
   }
 
-  return localStorage.getItem(USER_NAME_KEY);
+  return localStorage.getItem(USER_NAME_STORAGE_KEY);
+}
+
+/**
+ * Obtém o e-mail do usuário (se definido)
+ */
+export function getUserEmail(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return localStorage.getItem(USER_EMAIL_STORAGE_KEY);
 }
 
 /**
@@ -60,7 +71,18 @@ export function setUserName(name: string): void {
     return;
   }
 
-  localStorage.setItem(USER_NAME_KEY, name);
+  localStorage.setItem(USER_NAME_STORAGE_KEY, name);
+}
+
+/**
+ * Define o e-mail do usuário
+ */
+export function setUserEmail(email: string): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  localStorage.setItem(USER_EMAIL_STORAGE_KEY, email);
 }
 
 /**
@@ -82,7 +104,18 @@ export function clearUserName(): void {
     return;
   }
 
-  localStorage.removeItem(USER_NAME_KEY);
+  localStorage.removeItem(USER_NAME_STORAGE_KEY);
+}
+
+/**
+ * Remove o e-mail do usuário
+ */
+export function clearUserEmail(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  localStorage.removeItem(USER_EMAIL_STORAGE_KEY);
 }
 
 /**
@@ -130,5 +163,5 @@ export function hasActiveSession(): boolean {
     return false;
   }
 
-  return !!localStorage.getItem(USER_ID_KEY);
+  return !!localStorage.getItem(USER_ID_STORAGE_KEY);
 }

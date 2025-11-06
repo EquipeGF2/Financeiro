@@ -70,6 +70,29 @@ export function getSupabaseClient(options: ClientOptions = {}) {
   });
 }
 
+function ensureUserIdFromBrowser(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const stored = window.localStorage.getItem(USER_ID_STORAGE_KEY);
+    if (stored && stored.trim().length > 0) {
+      return stored;
+    }
+
+    const uuid = window.crypto?.randomUUID
+      ? window.crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+    window.localStorage.setItem(USER_ID_STORAGE_KEY, uuid);
+    return uuid;
+  } catch (error) {
+    console.warn("Não foi possível acessar o localStorage para obter o usuário da sessão.", error);
+    return null;
+  }
+}
+
 /** Helper opcional */
 type AnySupabaseClient = SupabaseClient<any, any, any>;
 
