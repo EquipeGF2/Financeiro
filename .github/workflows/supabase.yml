@@ -26,29 +26,25 @@ jobs:
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
       PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
 
-       steps:
-      - uses: actions/checkout@v4
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
 
-      # Instala o CLI no runner
-      - uses: supabase/setup-cli@v1
+      - name: Instalar Supabase CLI
+        uses: supabase/setup-cli@v1
         with:
           version: 1.158.6
 
-      # Linka o repo ao projeto (usa token + senha do DB)
-      - name: Link project
+      - name: Linkar projeto Supabase
         run: supabase link --project-ref $PROJECT_REF --password $SUPABASE_DB_PASSWORD
 
-      # Aplica migrations (pasta supabase/migrations)
-      - name: Apply migrations
+      - name: Aplicar migrations no banco remoto
         run: supabase db push --remote
 
-      # Deploy de Edge Functions (se houver). O "|| true" evita falha quando não existirem.
       - name: Deploy edge functions (optional)
         run: supabase functions deploy --project-ref $PROJECT_REF || true
 
-      # Gera Types para o front (inclui schemas public e financas) dentro do monorepo
-      - name: Generate Types for Front_Web
+      - name: Gerar Types para Front_Web
         run: |
           mkdir -p Front_Web/src/lib
           supabase gen types typescript --project-id $PROJECT_REF --schema financas > Front_Web/src/lib/database.types.ts
-
