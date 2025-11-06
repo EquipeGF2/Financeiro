@@ -3,6 +3,7 @@
 -- Data: 2025-11-06
 -- Descrição: Tabela usr_usuarios para armazenar usuários identificados por UUID
 --            gerado no browser, sem necessidade de autenticação tradicional
+-- Ajustado
 -- ============================================================================
 
 -- Criar tabela de usuários

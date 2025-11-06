@@ -1,24 +1,15 @@
-import React from 'react';
-import { Sidebar } from '@/components/layout';
-import '@/styles/globals.css';
+import "./globals.css"; // 👈 importa estilos globais
+import type { Metadata } from "next";
 
-export const metadata = {
-  title: "Financeiro - Sistema de Gestão Financeira",
-  description: "Sistema de controle de pagamentos, receitas e saldos bancários",
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://financeiro-germani.vercel.app"),
+export const metadata: Metadata = {
+  title: "Financeiro",
+  description: "App Financeiro",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-br">
-      <body>
-        <div className="main-layout">
-          <Sidebar />
-          <main className="main-content">
-            {children}
-          </main>
-        </div>
-      </body>
+    <html lang="pt-BR">
+      <body>{children}</body>
     </html>
   );
 }

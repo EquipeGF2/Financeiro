@@ -1,0 +1,11 @@
+:root { --bg: #0e1116; --fg: #e6edf3; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+a { color: inherit; text-decoration: none; }
+* { box-sizing: border-box; }
