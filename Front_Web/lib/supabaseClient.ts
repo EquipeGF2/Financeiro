@@ -22,13 +22,51 @@ export function getSupabaseServer() {
 }
 
 /** Cliente para uso em Client Components (browser) */
-export function getSupabaseClient() {
+type ClientOptions = {
+  /**
+   * Define se o cabeçalho de sessão (x-user-id) deve ser enviado automaticamente.
+   * Útil para chamadas internas que já definiram manualmente o cabeçalho.
+   */
+  includeSessionHeader?: boolean;
+  /**
+   * Cabeçalhos adicionais a serem enviados com todas as requisições.
+   */
+  headers?: Record<string, string | undefined>;
+};
+
+export function getSupabaseClient(options: ClientOptions = {}) {
   assertEnv();
   if (typeof window === "undefined") {
     throw new Error("getSupabaseClient() só pode ser usado no browser");
   }
+
+  const sessionHeaders: Record<string, string> = {};
+
+  if (options.includeSessionHeader !== false) {
+    const userId = getUserId();
+    if (userId) {
+      sessionHeaders["x-user-id"] = userId;
+    }
+  }
+
+  const extraHeaders = Object.entries(options.headers ?? {}).reduce(
+    (acc, [key, value]) => {
+      if (value) {
+        acc[key] = value;
+      }
+      return acc;
+    },
+    {} as Record<string, string>
+  );
+
   return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     db: { schema: SCHEMA },
+    global: {
+      headers: {
+        ...sessionHeaders,
+        ...extraHeaders,
+      },
+    },
   });
 }
 
@@ -77,5 +115,8 @@ export async function getOrCreateUser(
     .select()
     .single();
 
-  return { data: inserted ?? null, error: insertErr ?? null };
+  return {
+    data: (inserted as UsuarioRow | null) ?? null,
+    error: insertErr ?? null,
+  };
 }
