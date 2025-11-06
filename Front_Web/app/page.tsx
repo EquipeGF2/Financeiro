@@ -4,23 +4,20 @@ import { getSupabaseServer } from "../lib/supabaseClient";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-const SCHEMA = process.env.NEXT_PUBLIC_SUPABASE_SCHEMA ?? "public";
-// Se o schema ativo for "financas", lê a tabela direta; senão, usa a view no public
-const TABLE = SCHEMA === "financas" ? "teste_ci" : "v_teste_ci";
-
 export default async function Page() {
   const supabase = getSupabaseServer();
 
+  // como o client já está no schema 'financas', basta o nome simples:
   const { data, error } = await supabase
-    .from(TABLE)
-    .select("*")
-    .order("id", { ascending: false })
+    .from('teste_ci')
+    .select('*')
+    .order('id', { ascending: false })
     .limit(5);
 
   return (
     <main>
       <h1>Financeiro — Smoke Test</h1>
-      <p>Schema: <b>{SCHEMA}</b> | Fonte: <b>{TABLE}</b></p>
+      <p>Schema: <b>financas</b> | Fonte: <b>teste_ci</b></p>
 
       {error ? (
         <pre style={{ color: "crimson" }}>{JSON.stringify(error, null, 2)}</pre>
