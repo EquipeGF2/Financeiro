@@ -21,11 +21,14 @@ CREATE TABLE IF NOT EXISTS financas.ctr_contas_receita (...)
 ### 2. **Cliente Supabase** (`Front_Web/lib/supabaseClient.ts`)
 
 ```typescript
-createClient(
-  url,
-  key,
-  { db: { schema: process.env.NEXT_PUBLIC_SUPABASE_SCHEMA || "financas" } }
-)
+createClient(url, key, {
+  db: { schema: process.env.NEXT_PUBLIC_SUPABASE_SCHEMA || 'financas' },
+  global: {
+    headers: {
+      'x-user-id': getUserId(), // ✅ Cabeçalho usado pelo RLS
+    },
+  },
+});
 ```
 
 ### 3. **Variável de Ambiente** (`.env.local`)
@@ -83,11 +86,12 @@ Quando solicitado, informe a senha do banco de dados.
 supabase db push
 ```
 
-Isso aplicará as 4 migrations:
+Isso aplicará as migrations base, incluindo a adição do campo de e-mail:
 1. ✅ `2025-11-06-000001_create_user_tables.sql`
 2. ✅ `2025-11-06-000002_create_cadastro_tables.sql`
 3. ✅ `2025-11-06-000003_create_movimentacao_tables.sql`
 4. ✅ `2025-11-06-000004_fix_rls_policies.sql`
+5. ✅ `2025-11-07-090000_add_usr_email_column.sql`
 
 ### 3. Verificar Tabelas Criadas
 
