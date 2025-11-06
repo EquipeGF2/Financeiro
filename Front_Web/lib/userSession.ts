@@ -3,77 +3,28 @@
  * Gerenciamento de sessão de usuário sem login usando localStorage
  */
 
-import {
-  USER_EMAIL_STORAGE_KEY,
-  USER_ID_STORAGE_KEY,
-  USER_NAME_STORAGE_KEY,
-} from "./sessionKeys";
-
-const isBrowser = typeof window !== "undefined";
-
-function safeGetItem(key: string): string | null {
-  if (!isBrowser) {
-    return null;
-  }
-
-  try {
-    return window.localStorage.getItem(key);
-  } catch (error) {
-    console.warn("Não foi possível ler o item da sessão.", { key, error });
-    return null;
-  }
-}
-
-function safeSetItem(key: string, value: string): void {
-  if (!isBrowser) {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(key, value);
-  } catch (error) {
-    console.warn("Não foi possível gravar o item da sessão.", { key, error });
-  }
-}
-
-function safeRemoveItem(key: string): void {
-  if (!isBrowser) {
-    return;
-  }
-
-  try {
-    window.localStorage.removeItem(key);
-  } catch (error) {
-    console.warn("Não foi possível remover o item da sessão.", { key, error });
-  }
-}
-
-function generateClientUuid(): string {
-  if (!isBrowser) {
-    return "";
-  }
-
-  if (typeof window.crypto?.randomUUID === "function") {
-    return window.crypto.randomUUID();
-  }
-
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
+const USER_ID_KEY = 'financeiro_user_id';
+const USER_NAME_KEY = 'financeiro_user_name';
+const USER_EMAIL_KEY = 'financeiro_user_email';
 
 /**
  * Obtém o ID do usuário atual.
  * Se não existir, gera um novo UUID e armazena.
  */
 export function getUserId(): string {
-  const stored = safeGetItem(USER_ID_STORAGE_KEY);
-  if (stored && stored.trim().length > 0) {
+  if (typeof window === 'undefined') {
+    // Server-side: retorna vazio ou um valor padrão
+    return '';
+  }
+
+  const stored = localStorage.getItem(USER_ID_STORAGE_KEY);
+  if (stored) {
     return stored;
   }
 
-  const newId = generateClientUuid();
-  if (newId) {
-    safeSetItem(USER_ID_STORAGE_KEY, newId);
-  }
+  // Gera novo UUID
+  const newId = crypto.randomUUID();
+  localStorage.setItem(USER_ID_STORAGE_KEY, newId);
 
   return newId;
 }
@@ -86,12 +37,29 @@ export function getUserName(): string | null {
   return value && value.trim().length > 0 ? value : null;
 }
 
+  return localStorage.getItem(USER_NAME_STORAGE_KEY);
+}
+
 /**
  * Obtém o e-mail do usuário (se definido)
  */
 export function getUserEmail(): string | null {
-  const value = safeGetItem(USER_EMAIL_STORAGE_KEY);
-  return value && value.trim().length > 0 ? value : null;
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return localStorage.getItem(USER_EMAIL_STORAGE_KEY);
+}
+
+/**
+ * Obtém o e-mail do usuário (se definido)
+ */
+export function getUserEmail(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return localStorage.getItem(USER_EMAIL_KEY);
 }
 
 /**
@@ -103,7 +71,29 @@ export function setUserName(name: string): void {
     return;
   }
 
-  safeSetItem(USER_NAME_STORAGE_KEY, name.trim());
+  localStorage.setItem(USER_NAME_STORAGE_KEY, name);
+}
+
+/**
+ * Define o e-mail do usuário
+ */
+export function setUserEmail(email: string): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  localStorage.setItem(USER_EMAIL_STORAGE_KEY, email);
+}
+
+/**
+ * Define o e-mail do usuário
+ */
+export function setUserEmail(email: string): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  localStorage.setItem(USER_EMAIL_KEY, email);
 }
 
 /**
@@ -115,21 +105,29 @@ export function setUserEmail(email: string): void {
     return;
   }
 
-  safeSetItem(USER_EMAIL_STORAGE_KEY, email.trim());
-}
-
-/**
- * Remove o nome do usuário
- */
-export function clearUserName(): void {
-  safeRemoveItem(USER_NAME_STORAGE_KEY);
+  localStorage.removeItem(USER_NAME_STORAGE_KEY);
 }
 
 /**
  * Remove o e-mail do usuário
  */
 export function clearUserEmail(): void {
-  safeRemoveItem(USER_EMAIL_STORAGE_KEY);
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  localStorage.removeItem(USER_EMAIL_STORAGE_KEY);
+}
+
+/**
+ * Remove o e-mail do usuário
+ */
+export function clearUserEmail(): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  localStorage.removeItem(USER_EMAIL_KEY);
 }
 
 /**
@@ -137,9 +135,13 @@ export function clearUserEmail(): void {
  * CUIDADO: Isso fará com que o usuário perca acesso aos seus dados
  */
 export function clearUserSession(): void {
-  safeRemoveItem(USER_ID_STORAGE_KEY);
-  safeRemoveItem(USER_NAME_STORAGE_KEY);
-  safeRemoveItem(USER_EMAIL_STORAGE_KEY);
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  localStorage.removeItem(USER_ID_KEY);
+  localStorage.removeItem(USER_NAME_KEY);
+  localStorage.removeItem(USER_EMAIL_KEY);
 }
 
 export type UserSessionSnapshot = {
@@ -158,10 +160,10 @@ export function getUserSession(): UserSessionSnapshot {
   const userEmail = getUserEmail();
 
   return {
-    userId,
-    userName,
-    userEmail,
-    displayName: userName || userEmail || "Usuário Anônimo",
+    userId: getUserId(),
+    userName: getUserName(),
+    userEmail: getUserEmail(),
+    displayName: getUserName() || 'Usuário Anônimo',
   };
 }
 
@@ -169,6 +171,9 @@ export function getUserSession(): UserSessionSnapshot {
  * Verifica se o usuário tem sessão ativa
  */
 export function hasActiveSession(): boolean {
-  const stored = safeGetItem(USER_ID_STORAGE_KEY);
-  return !!(stored && stored.trim().length > 0);
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return !!localStorage.getItem(USER_ID_STORAGE_KEY);
 }
