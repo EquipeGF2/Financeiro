@@ -24,7 +24,7 @@ BEGIN
         FROM pg_policies
         WHERE schemaname = 'financas'
           AND tablename = alvo.tabela
-          AND policyname = alvo.politica
+          AND polname = alvo.politica
       ) THEN
         EXECUTE format(
           'create policy %I on financas.%I for select to anon, authenticated using (true);',

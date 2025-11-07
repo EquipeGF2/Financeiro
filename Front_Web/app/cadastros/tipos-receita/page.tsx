@@ -209,8 +209,8 @@ export default function TiposReceitaPage() {
         isOpen={modalOpen}
         title="Inativar tipo de receita"
         message="Esta ação impedirá o uso deste tipo nas próximas movimentações."
-        confirmText="Inativar"
-        cancelText="Cancelar"
+        confirmLabel="Inativar"
+        cancelLabel="Cancelar"
         loading={processing}
         onConfirm={handleSoftDelete}
         onClose={() => setModalOpen(false)}
