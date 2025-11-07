@@ -7,9 +7,6 @@ import {
 import { USER_ID_STORAGE_KEY } from "./sessionKeys";
 import { getUserId } from "./userSession";
 
-import { USER_ID_STORAGE_KEY } from "./sessionKeys";
-import { getUserId } from "./userSession";
-
 // ENV obrigatórias
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
