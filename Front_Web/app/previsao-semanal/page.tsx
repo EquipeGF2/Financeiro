@@ -35,6 +35,32 @@ const RECEITA_PADROES: { padrao: RegExp; codigo: string }[] = [
   { padrao: /\bvista\b/, codigo: '202' },
 ];
 
+const TITULO_CORRECOES: Record<string, string> = {
+  'com materail e consumo': 'material e consumo',
+  'com material e consumo': 'material e consumo',
+};
+
+const TIPO_RECEITA_PREFERENCIAS: Record<string, string> = {
+  'deposito e pix': 'receita prevista',
+  'deposito e pix vero varejo': 'receita prevista',
+  'antecipado': 'receita prevista',
+  'antecipado vero varejo': 'receita prevista',
+  'boleto': 'receita prevista',
+  'cartao debito vero varejo': 'outros',
+  'cartao debito vero': 'outros',
+  'cartao debito': 'outros',
+  'a vista': 'outros',
+  'vista': 'outros',
+};
+
+const TIPO_RECEITA_PADROES: { padrao: RegExp; nome: string }[] = [
+  { padrao: /(deposito|depósito).*pix/, nome: 'receita prevista' },
+  { padrao: /antecipad/, nome: 'receita prevista' },
+  { padrao: /boleto/, nome: 'receita prevista' },
+  { padrao: /cartao|cartão|debito|débito.*vero.*varejo/, nome: 'outros' },
+  { padrao: /\ba vista\b|\bà vista\b|avista/, nome: 'outros' },
+];
+
 type AreaOption = { id: number; nome: string; normalizado: string };
 type ContaOption = {
   id: number;
@@ -96,6 +122,33 @@ const normalizarTexto = (texto: string): string =>
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
+
+const ajustarTituloNormalizado = (tituloNormalizado: string): string =>
+  TITULO_CORRECOES[tituloNormalizado] ?? tituloNormalizado;
+
+const encontrarTipoPreferido = (
+  tituloNormalizado: string,
+  mapaTipos: Map<string, TipoReceitaOption>,
+): TipoReceitaOption | null => {
+  const preferenciaDireta = TIPO_RECEITA_PREFERENCIAS[tituloNormalizado];
+  if (preferenciaDireta) {
+    const tipoDireto = mapaTipos.get(normalizarTexto(preferenciaDireta));
+    if (tipoDireto) {
+      return tipoDireto;
+    }
+  }
+
+  for (const item of TIPO_RECEITA_PADROES) {
+    if (item.padrao.test(tituloNormalizado)) {
+      const tipo = mapaTipos.get(normalizarTexto(item.nome));
+      if (tipo) {
+        return tipo;
+      }
+    }
+  }
+
+  return null;
+};
 
 const toISODate = (date: Date): string => date.toISOString().split('T')[0];
 
@@ -645,6 +698,20 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
         const mapaContasNome = new Map(contas.map((conta) => [conta.normalizado, conta]));
         const mapaTipos = new Map(tiposReceita.map((tipo) => [tipo.normalizado, tipo]));
 
+        mapaContasNome.forEach((conta, chave) => {
+          const correcao = TITULO_CORRECOES[chave];
+          if (correcao && !mapaContasNome.has(correcao)) {
+            mapaContasNome.set(correcao, conta);
+          }
+        });
+
+        Object.entries(TITULO_CORRECOES).forEach(([alias, destino]) => {
+          const contaCorrigida = mapaContasNome.get(destino);
+          if (contaCorrigida) {
+            mapaContasNome.set(alias, contaCorrigida);
+          }
+        });
+
         const novasLinhas: LinhaImportada[] = [];
         let saldoInicialLinha: LinhaImportada | null = null;
 
@@ -658,12 +725,18 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
           const tituloOriginal = String(tituloBruto).trim();
           if (!tituloOriginal) continue;
 
-          const tituloNormalizado = normalizarTexto(tituloOriginal);
+          const tituloNormalizadoOriginal = normalizarTexto(tituloOriginal);
+          const tituloNormalizado = ajustarTituloNormalizado(tituloNormalizadoOriginal);
+
           if (tituloNormalizado === 'receitas') continue;
-          if (tituloNormalizado.startsWith('saldo diario') || tituloNormalizado.startsWith('saldo diário')) {
+          if (tituloNormalizadoOriginal.startsWith('total despesa')) continue;
+          if (
+            tituloNormalizadoOriginal.startsWith('saldo diario') ||
+            tituloNormalizadoOriginal.startsWith('saldo diário')
+          ) {
             continue;
           }
-          if (tituloNormalizado.startsWith('saldo acumulado')) {
+          if (tituloNormalizadoOriginal.startsWith('saldo acumulado')) {
             continue;
           }
 
@@ -689,7 +762,7 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
             continue;
           }
 
-          if (tituloNormalizado.startsWith('gasto')) {
+          if (tituloNormalizadoOriginal.startsWith('gasto')) {
             const nomeArea = tituloOriginal.replace(/^gastos?\s*[:\-]?/i, '').trim();
             const area = mapaAreas.get(normalizarTexto(nomeArea));
             const linha: LinhaImportada = {
@@ -714,6 +787,7 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
             conta = mapaContasNome.get(tituloNormalizado);
           }
 
+          const tipoReceitaPreferido = encontrarTipoPreferido(tituloNormalizado, mapaTipos);
           const tipoReceitaSugerido = Array.from(mapaTipos.values()).find((tipo) =>
             tipo.normalizado.includes(tituloNormalizado),
           );
@@ -726,7 +800,7 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
             selecionado: Boolean(conta),
             areaId: null,
             contaId: conta?.id ?? null,
-            tipoReceitaId: tipoReceitaSugerido?.id ?? null,
+            tipoReceitaId: tipoReceitaPreferido?.id ?? tipoReceitaSugerido?.id ?? null,
             bancoId: conta?.bancoId ?? null,
             erros: [],
           };
@@ -857,6 +931,9 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
   const handleContaChange = (linhaId: string, contaId: number | null) => {
     atualizarLinha(linhaId, (linha) => {
       const conta = contaId !== null ? encontrarContaPorId(contas, contaId) : null;
+      const tituloNormalizado = ajustarTituloNormalizado(normalizarTexto(linha.titulo));
+      const mapaTipos = new Map(tiposReceita.map((tipo) => [tipo.normalizado, tipo]));
+      const tipoPreferido = encontrarTipoPreferido(tituloNormalizado, mapaTipos);
       const tipoReceitaSugestao = conta
         ? tiposReceita.find((tipo) => tipo.normalizado.includes(normalizarTexto(linha.titulo)))
         : null;
@@ -864,7 +941,7 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
         ...linha,
         contaId,
         bancoId: conta?.bancoId ?? null,
-        tipoReceitaId: linha.tipoReceitaId ?? tipoReceitaSugestao?.id ?? null,
+        tipoReceitaId: linha.tipoReceitaId ?? tipoPreferido?.id ?? tipoReceitaSugestao?.id ?? null,
         selecionado: contaId !== null ? true : linha.selecionado,
       };
       return {
