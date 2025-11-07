@@ -49,7 +49,9 @@ type BancoOption = { id: number; nome: string };
 
 type DiaValor = { data: string; valor: number; texto: string };
 
-type CabecalhoDataPlanilha = { coluna: number; data: string };
+type CabecalhoData = { coluna: number; data: string };
+
+type CabecalhoData = { coluna: number; data: string };
 
 type LinhaImportada = {
   id: string;
@@ -609,7 +611,7 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
         };
 
         let headerIndex = -1;
-        let datasDetectadas: CabecalhoDataPlanilha[] = [];
+        let datasDetectadas: CabecalhoData[] = [];
 
         for (let index = 0; index < rows.length; index += 1) {
           const row = rows[index];
@@ -620,7 +622,7 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
               const data = parseData(cell);
               return data ? { coluna: idx + 1, data } : null;
             })
-            .filter((item): item is CabecalhoDataPlanilha => item !== null);
+            .filter((item): item is CabecalhoData => item !== null);
           if (datas.length >= 2) {
             headerIndex = index;
             datasDetectadas = datas;
@@ -667,9 +669,10 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
             continue;
           }
 
-          const valores = datasDetectadas.map((cabecalho) =>
-            criarDiaValor(cabecalho.data, parseNumero(row[cabecalho.coluna])),
-          );
+          const valores = datasDetectadas.map((cabecalho) => ({
+            data: cabecalho.data,
+            valor: parseNumero(row[cabecalho.coluna]),
+          }));
 
           if (tituloNormalizado.startsWith('saldo inicial')) {
             saldoInicialLinha = {
