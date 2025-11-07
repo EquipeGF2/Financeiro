@@ -51,6 +51,8 @@ type DiaValor = { data: string; valor: number; texto: string };
 
 type CabecalhoData = { coluna: number; data: string };
 
+type CabecalhoData = { coluna: number; data: string };
+
 type LinhaImportada = {
   id: string;
   tipo: 'gasto' | 'receita' | 'saldo_inicial';
@@ -667,9 +669,10 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
             continue;
           }
 
-          const valores = datasDetectadas.map((cabecalho) =>
-            criarDiaValor(cabecalho.data, parseNumero(row[cabecalho.coluna])),
-          );
+          const valores = datasDetectadas.map((cabecalho) => ({
+            data: cabecalho.data,
+            valor: parseNumero(row[cabecalho.coluna]),
+          }));
 
           if (tituloNormalizado.startsWith('saldo inicial')) {
             saldoInicialLinha = {
