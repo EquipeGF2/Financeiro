@@ -25,19 +25,19 @@ type ContaOption = {
   id: number;
   codigo: string;
   nome: string;
-  bancoId: number | null;
-  bancoNome: string | null;
 };
 
 type BancoOption = {
   id: number;
   nome: string;
   codigo: string | null;
+  tipoConta: string | null;
 };
 
 type LancamentoExistente = {
   id: number;
   bancoId: number;
+  bancoTipoConta: string | null;
   contaId: number;
   tipoId: number;
   valor: number;
@@ -51,7 +51,12 @@ type ValoresNumericosPorTipo = Record<number, number>;
 type ValoresNumericosPorConta = Record<number, ValoresNumericosPorTipo>;
 type ValoresNumericosPorBanco = Record<number, ValoresNumericosPorConta>;
 
-type ResumoBanco = { bancoId: number | null; bancoNome: string; total: number };
+type ResumoBanco = {
+  bancoId: number | null;
+  bancoNome: string;
+  tipoConta: string | null;
+  total: number;
+};
 
 type ResumoTipo = {
   tipoId: number;
@@ -117,16 +122,29 @@ const normalizarCodigoConta = (codigo: string): string => {
   return apenasNumeros.padStart(3, '0');
 };
 
-const INFORMACOES_CONTA: Record<string, { titulo: string; descricao: string }> = {
+const INFORMACOES_CONTA: Record<
+  string,
+  { titulo: string; subtitulo: string; topicos: string[] }
+> = {
   '200': {
-    titulo: 'Receita de títulos',
-    descricao:
-      'Informe os valores cobrados em boletos e títulos registrados na conta de receita código 200 para o banco selecionado.',
+    titulo: 'Títulos — registrar como conta de receita 200',
+    subtitulo:
+      'Utilize esta seção para distribuir os valores recebidos por boletos e títulos entre os tipos de receita configurados.',
+    topicos: [
+      'Confirme se o banco selecionado corresponde ao extrato utilizado para registrar a cobrança.',
+      'Some os valores de boletos liquidados no dia e informe o total no tipo de receita adequado.',
+      'Revise o total informado antes de salvar para evitar diferenças com a previsão.',
+    ],
   },
   '201': {
-    titulo: 'Receita de depósitos',
-    descricao:
-      'Informe os valores recebidos por depósitos, PIX e cartões vinculados à conta de receita código 201 do banco selecionado.',
+    titulo: 'Depósitos e PIX — registrar como conta de receita 201',
+    subtitulo:
+      'Informe depósitos, PIX e recebimentos com cartões vinculados ao banco selecionado na conta de receita 201.',
+    topicos: [
+      'Verifique se o banco escolhido é o responsável pelo crédito da movimentação.',
+      'Distribua os valores por tipo de receita conforme a origem do recebimento (PIX, cartão, depósito).',
+      'Garanta que os valores informados correspondam ao extrato bancário do dia.',
+    ],
   },
 };
 
@@ -138,34 +156,53 @@ const obterDescricaoConta = (conta: ContaOption) => {
   }
   return {
     titulo: `Conta de receita ${conta.codigo}`,
-    descricao: `Registre os valores lançados para a conta ${conta.nome}.`,
+    subtitulo: `Registre os valores lançados para a conta ${conta.nome}.`,
+    topicos: [
+      'Selecione o banco onde o lançamento foi realizado.',
+      'Informe o valor total correspondente ao tipo de receita.',
+      'Confira os totais calculados antes de concluir o registro.',
+    ],
   };
 };
 
 const gerarMapaTextoInicial = (
+  bancosLista: BancoOption[],
   contasLista: ContaOption[],
   tiposLista: TipoOption[],
   registros: Record<string, LancamentoExistente>,
 ): ValoresTextoPorBanco => {
   const mapa: ValoresTextoPorBanco = {};
 
-  contasLista.forEach((conta) => {
-    if (conta.bancoId === null || conta.bancoId === undefined) {
-      return;
-    }
+  bancosLista.forEach((banco) => {
+    const valoresPorConta: ValoresTextoPorConta = {};
 
-    if (!mapa[conta.bancoId]) {
-      mapa[conta.bancoId] = {};
-    }
+    contasLista.forEach((conta) => {
+      const valoresConta: ValoresTextoPorTipo = {};
 
-    const valoresConta: ValoresTextoPorTipo = {};
-    tiposLista.forEach((tipo) => {
-      const chave = gerarChaveLancamento(conta.id, tipo.id);
-      const registro = registros[chave];
-      valoresConta[tipo.id] = registro && registro.valor > 0 ? formatarValorParaInput(registro.valor) : '';
+      tiposLista.forEach((tipo) => {
+        const chave = gerarChaveLancamento(banco.id, conta.id, tipo.id);
+        const registro = registros[chave];
+        valoresConta[tipo.id] = registro && registro.valor > 0 ? formatarValorParaInput(registro.valor) : '';
+      });
+
+      valoresPorConta[conta.id] = valoresConta;
     });
 
-    mapa[conta.bancoId][conta.id] = valoresConta;
+    mapa[banco.id] = valoresPorConta;
+  });
+
+  Object.values(registros).forEach((registro) => {
+    const bancoId = registro.bancoId;
+    if (!mapa[bancoId]) {
+      mapa[bancoId] = {};
+    }
+
+    if (!mapa[bancoId][registro.contaId]) {
+      mapa[bancoId][registro.contaId] = {};
+    }
+
+    mapa[bancoId][registro.contaId][registro.tipoId] =
+      registro.valor > 0 ? formatarValorParaInput(registro.valor) : '';
   });
 
   return mapa;
@@ -193,12 +230,6 @@ export default function LancamentoCobrancaPage() {
   const [bancoSelecionadoId, setBancoSelecionadoId] = useState<number | null>(null);
 
   const podeEditar = dataReferencia >= limiteRetroativo && dataReferencia <= hojeIso;
-
-  const contasMap = useMemo(() => {
-    const mapa = new Map<number, ContaOption>();
-    contas.forEach((conta) => mapa.set(conta.id, conta));
-    return mapa;
-  }, [contas]);
 
   const contasRelevantes = useMemo(() => {
     const filtradas = contas.filter((conta) => {
@@ -241,17 +272,6 @@ export default function LancamentoCobrancaPage() {
     return mapa;
   }, [tipos]);
 
-  const contasPorBanco = useMemo(() => {
-    const mapa = new Map<number, ContaOption[]>();
-    contas.forEach((conta) => {
-      if (conta.bancoId === null || conta.bancoId === undefined) {
-        return;
-      }
-      const listaAtual = mapa.get(conta.bancoId) ?? [];
-      listaAtual.push(conta);
-      mapa.set(conta.bancoId, listaAtual);
-    });
-
   const tiposOrdenados = useMemo(() => {
     const filtrados = tipos.filter((tipo) => {
       const codigoNormalizado = (tipo.codigo ?? '').replace(/[^0-9]/g, '');
@@ -276,21 +296,20 @@ export default function LancamentoCobrancaPage() {
     const base: ValoresNumericosPorBanco = {};
 
     Object.values(lancamentosExistentes).forEach((registro) => {
-      const conta = contasMap.get(registro.contaId);
-      const bancoId = conta?.bancoId ?? null;
+      const bancoId = Number.isFinite(registro.bancoId) ? registro.bancoId : null;
       const chaveBanco = bancoId ?? -1;
 
       if (!base[chaveBanco]) {
         base[chaveBanco] = {};
       }
 
-      const mapaConta = base[chaveBanco][conta?.id ?? registro.contaId] ?? {};
+      const mapaConta = base[chaveBanco][registro.contaId] ?? {};
       mapaConta[registro.tipoId] = arredondar(registro.valor);
-      base[chaveBanco][conta?.id ?? registro.contaId] = mapaConta;
+      base[chaveBanco][registro.contaId] = mapaConta;
     });
 
     return base;
-  }, [contasMap, lancamentosExistentes]);
+  }, [lancamentosExistentes]);
 
   const resumoFormularioPorBanco = useMemo<ResumoBanco[]>(() => {
     const linhas: ResumoBanco[] = [];
@@ -316,6 +335,7 @@ export default function LancamentoCobrancaPage() {
       linhas.push({
         bancoId,
         bancoNome: banco?.nome ?? 'Banco não identificado',
+        tipoConta: banco?.tipoConta ?? null,
         total: arredondar(total),
       });
     });
@@ -370,6 +390,19 @@ export default function LancamentoCobrancaPage() {
     return resumoTiposFormulario.reduce((acc, item) => acc + item.total, 0);
   }, [resumoTiposFormulario]);
 
+  const tipoContaSalvaPorBanco = useMemo(() => {
+    const mapa = new Map<number, string | null>();
+    Object.values(lancamentosExistentes).forEach((registro) => {
+      if (!Number.isFinite(registro.bancoId)) {
+        return;
+      }
+      if (!mapa.has(registro.bancoId)) {
+        mapa.set(registro.bancoId, registro.bancoTipoConta ?? null);
+      }
+    });
+    return mapa;
+  }, [lancamentosExistentes]);
+
   const resumoLancadoPorBanco = useMemo<ResumoBanco[]>(() => {
     const linhas: ResumoBanco[] = [];
 
@@ -394,12 +427,13 @@ export default function LancamentoCobrancaPage() {
       linhas.push({
         bancoId,
         bancoNome: banco?.nome ?? 'Sem banco vinculado',
+        tipoConta: banco?.tipoConta ?? (bancoId !== null ? tipoContaSalvaPorBanco.get(bancoId) ?? null : null),
         total: arredondar(total),
       });
     });
 
     return linhas.sort((a, b) => a.bancoNome.localeCompare(b.bancoNome, 'pt-BR', { sensitivity: 'base' }));
-  }, [bancos, valoresSalvosPorBanco]);
+  }, [bancos, tipoContaSalvaPorBanco, valoresSalvosPorBanco]);
 
   const totalLancadoPorBanco = useMemo(() => {
     return resumoLancadoPorBanco.reduce((acc, item) => acc + item.total, 0);
@@ -453,13 +487,14 @@ export default function LancamentoCobrancaPage() {
       data: string,
       contasLista?: ContaOption[],
       tiposLista?: TipoOption[],
+      bancosLista?: BancoOption[],
     ) => {
       try {
         setCarregandoLancamentos(true);
         const supabase = getSupabaseClient();
         const { data: registros, error } = await supabase
           .from('cob_cobrancas')
-          .select('cob_id, cob_ban_id, cob_ctr_id, cob_tpr_id, cob_valor')
+          .select('cob_id, cob_ban_id, cob_ban_tipo_conta, cob_ctr_id, cob_tpr_id, cob_valor')
           .eq('cob_usr_id', usuarioAtual.usr_id)
           .eq('cob_data', data);
 
@@ -477,6 +512,7 @@ export default function LancamentoCobrancaPage() {
           mapa[chave] = {
             id: Number(registro.cob_id),
             bancoId,
+            bancoTipoConta: typeof registro.cob_ban_tipo_conta === 'string' ? registro.cob_ban_tipo_conta : null,
             contaId,
             tipoId,
             valor: Number(registro.cob_valor ?? 0),
@@ -487,8 +523,9 @@ export default function LancamentoCobrancaPage() {
 
         const contasBase = contasLista ?? contas;
         const tiposBase = tiposLista ?? tipos;
-        if (contasBase.length > 0 && tiposBase.length > 0) {
-          setValoresPorBanco(gerarMapaTextoInicial(contasBase, tiposBase, mapa));
+        const bancosBase = bancosLista ?? bancos;
+        if (contasBase.length > 0 && tiposBase.length > 0 && bancosBase.length > 0) {
+          setValoresPorBanco(gerarMapaTextoInicial(bancosBase, contasBase, tiposBase, mapa));
         } else {
           setValoresPorBanco({});
         }
@@ -500,7 +537,7 @@ export default function LancamentoCobrancaPage() {
         setCarregandoLancamentos(false);
       }
     },
-    [contas, tipos],
+    [bancos, contas, tipos],
   );
 
   useEffect(() => {
@@ -536,12 +573,12 @@ export default function LancamentoCobrancaPage() {
             .order('tpr_nome', { ascending: true }),
           supabase
             .from('ctr_contas_receita')
-            .select('ctr_id, ctr_nome, ctr_codigo, ctr_ban_id, ban_bancos(ban_nome)')
+            .select('ctr_id, ctr_nome, ctr_codigo')
             .eq('ctr_ativo', true)
             .order('ctr_nome', { ascending: true }),
           supabase
             .from('ban_bancos')
-            .select('ban_id, ban_nome, ban_codigo')
+            .select('ban_id, ban_nome, ban_codigo, ban_tipo_conta')
             .eq('ban_ativo', true)
             .order('ban_nome', { ascending: true }),
         ]);
@@ -557,16 +594,11 @@ export default function LancamentoCobrancaPage() {
         }));
 
         const contasFormatadas: ContaOption[] = (contasRes.data ?? []).map((conta) => {
-          const bancoRelacionado = Array.isArray(conta.ban_bancos)
-            ? conta.ban_bancos[0]
-            : (conta.ban_bancos as { ban_nome?: string | null } | null);
           const codigo = typeof conta.ctr_codigo === 'string' ? conta.ctr_codigo : String(conta.ctr_codigo ?? '');
           return {
             id: Number(conta.ctr_id),
             codigo,
             nome: conta.ctr_nome ?? 'Conta sem nome',
-            bancoId: conta.ctr_ban_id !== null ? Number(conta.ctr_ban_id) : null,
-            bancoNome: bancoRelacionado?.ban_nome ?? null,
           } satisfies ContaOption;
         });
 
@@ -574,6 +606,7 @@ export default function LancamentoCobrancaPage() {
           id: Number(banco.ban_id),
           nome: banco.ban_nome ?? 'Banco sem nome',
           codigo: banco.ban_codigo ?? null,
+          tipoConta: banco.ban_tipo_conta ?? null,
         }));
 
         setTipos(tiposFormatados);
@@ -581,7 +614,13 @@ export default function LancamentoCobrancaPage() {
         setBancos(bancosFormatados);
         setMensagem(null);
 
-        await carregarLancamentosDia(usuarioEncontrado, dataReferencia, contasFormatadas, tiposFormatados);
+        await carregarLancamentosDia(
+          usuarioEncontrado,
+          dataReferencia,
+          contasFormatadas,
+          tiposFormatados,
+          bancosFormatados,
+        );
       } catch (error) {
         console.error('Erro ao carregar tela de cobranças:', error);
         setMensagem({
@@ -600,11 +639,11 @@ export default function LancamentoCobrancaPage() {
     if (!usuario) {
       return;
     }
-    if (contas.length === 0 || tipos.length === 0) {
+    if (contas.length === 0 || tipos.length === 0 || bancos.length === 0) {
       return;
     }
     carregarLancamentosDia(usuario, dataReferencia);
-  }, [usuario, contas, tipos, dataReferencia, carregarLancamentosDia]);
+  }, [usuario, contas, tipos, bancos, dataReferencia, carregarLancamentosDia]);
 
   useEffect(() => {
     if (bancos.length > 0 && bancoSelecionadoId === null) {
@@ -666,24 +705,18 @@ export default function LancamentoCobrancaPage() {
       return;
     }
 
-    const contasBanco = contasPorBanco.get(bancoSelecionadoId) ?? [];
-
-    if (contasBanco.length === 0) {
+    if (contasRelevantes.length === 0) {
       setMensagem({
         tipo: 'erro',
-        texto: 'Associe contas de receita ao banco selecionado antes de registrar as cobranças.',
+        texto: 'Cadastre as contas de receita 200 e 201 para liberar os lançamentos de cobrança.',
       });
       return;
     }
 
-    const codigosObrigatorios = ['200', '201'];
-    const codigosDisponiveis = new Set(contasBanco.map((conta) => normalizarCodigoConta(conta.codigo)));
-    const faltantes = codigosObrigatorios.filter((codigo) => !codigosDisponiveis.has(codigo));
-
-    if (faltantes.length > 0) {
+    if (faltantesObrigatorios.length > 0) {
       setMensagem({
         tipo: 'erro',
-        texto: `Associe as contas de receita ${faltantes.join(' e ')} ao banco selecionado antes de registrar as cobranças.`,
+        texto: `Inclua as contas de receita ${faltantesObrigatorios.join(' e ')} antes de registrar as cobranças.`,
       });
       return;
     }
@@ -697,8 +730,13 @@ export default function LancamentoCobrancaPage() {
       });
       return;
     }
+    const bancoAtual = bancos.find((item) => item.id === bancoSelecionadoId) ?? null;
+    const tipoContaBancoSelecionado = bancoAtual?.tipoConta ?? null;
+
     const registrosParaUpsert: Array<{
       cob_id?: number;
+      cob_ban_id: number;
+      cob_ban_tipo_conta: string | null;
       cob_ctr_id: number;
       cob_tpr_id: number;
       cob_usr_id: number;
@@ -707,19 +745,21 @@ export default function LancamentoCobrancaPage() {
     }> = [];
     const idsParaExcluir: number[] = [];
 
-    contasBanco.forEach((conta) => {
+    contasRelevantes.forEach((conta) => {
       const valoresConta = valoresBanco[conta.id] ?? {};
 
-      tiposOrdenados.forEach((tipo) => {
-        const valorEntrada = valoresConta[tipo.id] ?? '';
-        const valorCalculado = avaliarValor(valorEntrada);
-        const chave = gerarChaveLancamento(conta.id, tipo.id);
+        tiposOrdenados.forEach((tipo) => {
+          const valorEntrada = valoresConta[tipo.id] ?? '';
+          const valorCalculado = avaliarValor(valorEntrada);
+          const chave = gerarChaveLancamento(bancoSelecionadoId!, conta.id, tipo.id);
         const registroExistente = lancamentosExistentes[chave];
 
         if (valorCalculado !== null && valorCalculado > 0) {
           if (!registroExistente || Math.abs(valorCalculado - registroExistente.valor) > 0.009) {
             registrosParaUpsert.push({
               cob_id: registroExistente?.id,
+              cob_ban_id: bancoSelecionadoId!,
+              cob_ban_tipo_conta: tipoContaBancoSelecionado,
               cob_ctr_id: conta.id,
               cob_tpr_id: tipo.id,
               cob_usr_id: usuarioId,
@@ -801,16 +841,14 @@ export default function LancamentoCobrancaPage() {
     ? bancos.find((banco) => banco.id === bancoSelecionadoId)
     : null;
 
-  const valoresBancoSelecionado: ValoresTextoPorConta = bancoSelecionadoId
-    ? valoresPorBanco[bancoSelecionadoId] ?? {}
-    : {};
-  const valoresSalvosBancoSelecionado: ValoresNumericosPorConta = bancoSelecionadoId
-    ? valoresSalvosPorBanco[bancoSelecionadoId] ?? {}
-    : {};
+  let valoresBancoSelecionado: ValoresTextoPorConta = {};
+  let valoresSalvosBancoSelecionado: ValoresNumericosPorConta = {};
+  let contasBancoSelecionado: ContaOption[] = contasRelevantes;
 
-  const contasBancoSelecionado = bancoSelecionadoId
-    ? contasPorBanco.get(bancoSelecionadoId) ?? []
-    : [];
+  if (bancoSelecionadoId !== null) {
+    valoresBancoSelecionado = valoresPorBanco[bancoSelecionadoId] ?? {};
+    valoresSalvosBancoSelecionado = valoresSalvosPorBanco[bancoSelecionadoId] ?? {};
+  }
 
   return (
     <>
@@ -854,12 +892,18 @@ export default function LancamentoCobrancaPage() {
                     Intervalo permitido: {formatarDataPt(limiteRetroativo)} até {formatarDataPt(hojeIso)}.
                   </div>
                 </div>
+                {faltantesObrigatorios.length > 0 && (
+                  <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                    Cadastre as contas de receita {faltantesObrigatorios.join(' e ')} para liberar os lançamentos nas contas
+                    bancárias.
+                  </div>
+                )}
               </div>
               <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
                 <div className="border-b border-gray-200 px-4 py-3">
-                  <h3 className="text-base font-semibold text-gray-900">Resumo por banco (lançamentos salvos)</h3>
+                  <h3 className="text-base font-semibold text-gray-900">Resumo por banco (valores registrados)</h3>
                   <p className="mt-1 text-xs text-gray-500">
-                    Exibe somente os bancos que possuem valores registrados para a data selecionada.
+                    Mostra apenas os bancos da tabela <strong>ban_bancos</strong> que possuem lançamentos para a data selecionada.
                   </p>
                 </div>
                 <div className="px-4 py-3">
@@ -871,6 +915,7 @@ export default function LancamentoCobrancaPage() {
                         <thead className="bg-gray-50">
                           <tr>
                             <th className="px-3 py-2 text-left font-semibold text-gray-600">Banco</th>
+                            <th className="px-3 py-2 text-left font-semibold text-gray-600">Tipo de conta</th>
                             <th className="px-3 py-2 text-right font-semibold text-gray-600">Valor registrado</th>
                           </tr>
                         </thead>
@@ -878,6 +923,9 @@ export default function LancamentoCobrancaPage() {
                           {resumoLancadoPorBanco.map((linha) => (
                             <tr key={`salvo-banco-${linha.bancoId}`}>
                               <td className="px-3 py-2 text-gray-700">{linha.bancoNome}</td>
+                              <td className="px-3 py-2 text-gray-700">
+                                {linha.tipoConta ?? 'Não informado'}
+                              </td>
                               <td className="px-3 py-2 text-right font-medium text-gray-900">
                                 {formatCurrency(linha.total)}
                               </td>
@@ -886,7 +934,9 @@ export default function LancamentoCobrancaPage() {
                         </tbody>
                         <tfoot className="bg-gray-50">
                           <tr>
-                            <th className="px-3 py-2 text-left font-semibold text-gray-700">Total</th>
+                            <th className="px-3 py-2 text-left font-semibold text-gray-700" colSpan={2}>
+                              Total
+                            </th>
                             <th className="px-3 py-2 text-right font-semibold text-gray-900">
                               {formatCurrency(totalLancadoPorBanco)}
                             </th>
@@ -899,9 +949,9 @@ export default function LancamentoCobrancaPage() {
               </div>
               <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
                 <div className="border-b border-gray-200 px-4 py-3">
-                  <h3 className="text-base font-semibold text-gray-900">Resumo por tipo (lançamentos salvos)</h3>
+                  <h3 className="text-base font-semibold text-gray-900">Resumo por tipo de receita (registros existentes)</h3>
                   <p className="mt-1 text-xs text-gray-500">
-                    Consolida os valores registrados por código de receita na data selecionada.
+                    Agrupa os lançamentos registrados por código na tabela <strong>tip_tipos_receita</strong> para a data selecionada.
                   </p>
                 </div>
                 <div className="px-4 py-3">
@@ -958,65 +1008,66 @@ export default function LancamentoCobrancaPage() {
               </div>
             )}
 
-            <div className="grid gap-4 md:grid-cols-[minmax(0,320px)_minmax(0,1fr)] md:items-start">
-              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm space-y-3">
-                <div>
+            <div className="grid gap-4 md:grid-cols-[minmax(0,360px)_minmax(0,1fr)] md:items-start">
+              <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm space-y-4">
+                <div className="space-y-1">
                   <h3 className="text-base font-semibold text-gray-900">Seleção do banco</h3>
-                  <p className="mt-1 text-sm text-gray-500">
-                    Escolha o banco para informar os valores das contas de receita 200 e 201.
+                  <p className="text-sm text-gray-500">
+                    Os bancos listados abaixo são carregados da tabela <strong>ban_bancos</strong> e devem possuir contas de receita vinculadas.
                   </p>
                 </div>
-                <select
-                  className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  value={bancoSelecionadoId ?? ''}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setBancoSelecionadoId(value ? Number(value) : null);
-                    setMensagem(null);
-                  }}
-                  disabled={bancos.length === 0}
-                >
-                  <option value="">Selecione um banco</option>
-                  {bancos.map((banco) => (
-                    <option key={banco.id} value={banco.id}>
-                      {banco.nome}
-                    </option>
-                  ))}
-                </select>
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Escolha o banco para lançar os valores de cobrança
+                    <select
+                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      value={bancoSelecionadoId ?? ''}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setBancoSelecionadoId(value ? Number(value) : null);
+                        setMensagem(null);
+                      }}
+                      disabled={bancos.length === 0}
+                    >
+                      <option value="">Selecione um banco</option>
+                      {bancos.map((banco) => (
+                        <option key={banco.id} value={banco.id}>
+                          {banco.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {bancoSelecionado && (
+                    <div className="mt-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                      <div>
+                        <span className="font-medium text-gray-700">Tipo de conta:</span>{' '}
+                        {bancoSelecionado.tipoConta ?? 'Não informado'}
+                      </div>
+                      <div>
+                        <span className="font-medium text-gray-700">Código:</span>{' '}
+                        {bancoSelecionado.codigo ?? '—'}
+                      </div>
+                    </div>
+                  )}
+                  <ul className="list-disc space-y-1 pl-5 text-xs text-gray-500">
+                    <li>
+                      Todos os bancos ativos aceitam lançamentos nas contas de receita 200 (títulos) e 201 (depósitos e PIX).
+                    </li>
+                    <li>
+                      Garanta que os tipos de receita estejam atualizados para permitir a distribuição correta dos valores.
+                    </li>
+                  </ul>
+                </div>
               </div>
-            </div>
-
-            <div className="space-y-2">
-              <h3 className="text-base font-semibold text-gray-900">Seleção do banco</h3>
-              <p className="text-sm text-gray-500">
-                Escolha o banco para informar os valores das contas contábeis configuradas na tabela de tipos de receita.
-              </p>
-              <select
-                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 md:w-80"
-                value={bancoSelecionadoId ?? ''}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setBancoSelecionadoId(value ? Number(value) : null);
-                  setMensagem(null);
-                }}
-                disabled={bancos.length === 0}
-              >
-                <option value="">Selecione um banco</option>
-                {bancos.map((banco) => (
-                  <option key={banco.id} value={banco.id}>
-                    {banco.nome}
-                  </option>
-                ))}
-              </select>
             </div>
 
             {contas.length > 0 && tiposOrdenados.length > 0 && (
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
                   <div className="border-b border-gray-200 px-4 py-3">
-                    <h3 className="text-base font-semibold text-gray-900">Resumo por banco (formulário)</h3>
+                    <h3 className="text-base font-semibold text-gray-900">Resumo por banco (valores informados)</h3>
                     <p className="mt-1 text-xs text-gray-500">
-                      Visualize o total informado em cada banco antes de salvar os lançamentos do dia.
+                      Verifique o total digitado para cada banco antes de registrar os lançamentos no Supabase.
                     </p>
                   </div>
                   <div className="px-4 py-3">
@@ -1030,6 +1081,7 @@ export default function LancamentoCobrancaPage() {
                           <thead className="bg-gray-50">
                             <tr>
                               <th className="px-3 py-2 text-left font-semibold text-gray-600">Banco</th>
+                              <th className="px-3 py-2 text-left font-semibold text-gray-600">Tipo de conta</th>
                               <th className="px-3 py-2 text-right font-semibold text-gray-600">Valor informado</th>
                             </tr>
                           </thead>
@@ -1037,6 +1089,7 @@ export default function LancamentoCobrancaPage() {
                             {resumoFormularioPorBanco.map((resumo) => (
                               <tr key={`form-resumo-${resumo.bancoId ?? 'sem-banco'}`}>
                                 <td className="px-3 py-2 text-gray-700">{resumo.bancoNome}</td>
+                                <td className="px-3 py-2 text-gray-700">{resumo.tipoConta ?? 'Não informado'}</td>
                                 <td className="px-3 py-2 text-right font-medium text-gray-900">
                                   {formatCurrency(resumo.total)}
                                 </td>
@@ -1045,7 +1098,9 @@ export default function LancamentoCobrancaPage() {
                           </tbody>
                           <tfoot className="bg-gray-50">
                             <tr>
-                              <th className="px-3 py-2 text-left font-semibold text-gray-700">Total</th>
+                              <th className="px-3 py-2 text-left font-semibold text-gray-700" colSpan={2}>
+                                Total
+                              </th>
                               <th className="px-3 py-2 text-right font-semibold text-gray-900">
                                 {formatCurrency(totalFormulario)}
                               </th>
@@ -1058,9 +1113,9 @@ export default function LancamentoCobrancaPage() {
                 </div>
                 <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
                   <div className="border-b border-gray-200 px-4 py-3">
-                    <h3 className="text-base font-semibold text-gray-900">Resumo por tipo (formulário)</h3>
+                    <h3 className="text-base font-semibold text-gray-900">Resumo por tipo de receita (valores informados)</h3>
                     <p className="mt-1 text-xs text-gray-500">
-                      Acompanhe o total distribuído por código de receita considerando todas as contas e bancos preenchidos.
+                      Acompanhe como os valores informados foram distribuídos entre os códigos disponíveis.
                     </p>
                   </div>
                   <div className="px-4 py-3">
@@ -1108,9 +1163,9 @@ export default function LancamentoCobrancaPage() {
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
                   <div className="border-b border-gray-200 px-4 py-3">
-                    <h3 className="text-base font-semibold text-gray-900">Valores já registrados por banco</h3>
+                    <h3 className="text-base font-semibold text-gray-900">Valores salvos por banco</h3>
                     <p className="mt-1 text-xs text-gray-500">
-                      Total atualmente salvo na base de dados para a data selecionada.
+                      Consultado diretamente na tabela <strong>cob_cobrancas</strong> para a data escolhida.
                     </p>
                   </div>
                   <div className="px-4 py-3">
@@ -1122,6 +1177,7 @@ export default function LancamentoCobrancaPage() {
                           <thead className="bg-gray-50">
                             <tr>
                               <th className="px-3 py-2 text-left font-semibold text-gray-600">Banco</th>
+                              <th className="px-3 py-2 text-left font-semibold text-gray-600">Tipo de conta</th>
                               <th className="px-3 py-2 text-right font-semibold text-gray-600">Valor registrado</th>
                             </tr>
                           </thead>
@@ -1129,6 +1185,7 @@ export default function LancamentoCobrancaPage() {
                             {resumoLancadoPorBanco.map((linha) => (
                               <tr key={`salvo-banco-${linha.bancoId ?? 'sem'}`}>
                                 <td className="px-3 py-2 text-gray-700">{linha.bancoNome}</td>
+                                <td className="px-3 py-2 text-gray-700">{linha.tipoConta ?? 'Não informado'}</td>
                                 <td className="px-3 py-2 text-right font-medium text-gray-900">
                                   {formatCurrency(linha.total)}
                                 </td>
@@ -1137,7 +1194,9 @@ export default function LancamentoCobrancaPage() {
                           </tbody>
                           <tfoot className="bg-gray-50">
                             <tr>
-                              <th className="px-3 py-2 text-left font-semibold text-gray-700">Total</th>
+                              <th className="px-3 py-2 text-left font-semibold text-gray-700" colSpan={2}>
+                                Total
+                              </th>
                               <th className="px-3 py-2 text-right font-semibold text-gray-900">
                                 {formatCurrency(totalLancadoPorBanco)}
                               </th>
@@ -1151,9 +1210,9 @@ export default function LancamentoCobrancaPage() {
 
                 <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
                   <div className="border-b border-gray-200 px-4 py-3">
-                    <h3 className="text-base font-semibold text-gray-900">Valores já registrados por tipo</h3>
+                    <h3 className="text-base font-semibold text-gray-900">Valores salvos por tipo de receita</h3>
                     <p className="mt-1 text-xs text-gray-500">
-                      Totais consolidados por código de receita com base nos lançamentos existentes.
+                      Totalização dos lançamentos aprovados por código de receita para a data selecionada.
                     </p>
                   </div>
                   <div className="px-4 py-3">
@@ -1191,9 +1250,9 @@ export default function LancamentoCobrancaPage() {
                           </tfoot>
                         </table>
                       </div>
-                    </div>
-                  );
-                })}
+                    )}
+                  </div>
+                </div>
               </div>
             ) : null}
 
@@ -1241,9 +1300,16 @@ export default function LancamentoCobrancaPage() {
                       <div key={`conta-${conta.id}`} className="rounded-lg border border-gray-200 bg-white shadow-sm">
                         <div className="border-b border-gray-200 px-4 py-3">
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
-                              <h3 className="text-base font-semibold text-gray-900">{descricaoConta.titulo}</h3>
-                              <p className="mt-1 text-xs text-gray-500">{descricaoConta.descricao}</p>
+                            <div className="space-y-2">
+                              <div>
+                                <h3 className="text-base font-semibold text-gray-900">{descricaoConta.titulo}</h3>
+                                <p className="mt-1 text-xs text-gray-500">{descricaoConta.subtitulo}</p>
+                              </div>
+                              <ul className="list-disc space-y-1 pl-5 text-xs text-gray-500">
+                                {descricaoConta.topicos.map((topico, index) => (
+                                  <li key={`topico-${conta.id}-${index}`}>{topico}</li>
+                                ))}
+                              </ul>
                             </div>
                             <div className="text-right text-xs text-gray-500">
                               <div>Conta: {conta.nome}</div>
