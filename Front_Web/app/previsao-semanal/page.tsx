@@ -38,8 +38,6 @@ const RECEITA_PADROES: { padrao: RegExp; codigo: string }[] = [
 const TITULO_CORRECOES: Record<string, string> = {
   'com materail e consumo': 'material e consumo',
   'com material e consumo': 'material e consumo',
-  'COM MATERIAL E CONSUMO': 'MATERIAL E CONSUMO',
-  'GASTO COM MATERIAL E CONSUMO': 'MATERIAL E CONSUMO',
   'gasto com material e consumo': 'material e consumo',
 };
 
@@ -347,6 +345,14 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
 
   const [previsaoExistente, setPrevisaoExistente] = useState<SemanaResumo | null>(null);
   const [carregandoPrevisao, setCarregandoPrevisao] = useState(false);
+  const [modalResumo, setModalResumo] = useState<{
+    iguais: number;
+    modificados: number;
+    novos: number;
+    removidos: number;
+    onConfirm: () => Promise<void>;
+    onCancel: () => void;
+  } | null>(null);
   const arquivoInputRef = useRef<HTMLInputElement | null>(null);
 
   const datasTabela = useMemo(() => {
@@ -1194,28 +1200,27 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
           idsParaDeletar.push(item.pvi_id);
         });
 
-        // Se há diferenças, pede confirmação
+        // Se há diferenças, pede confirmação via modal
         const totalDiferencas = itensModificados.length + itensNovos.length + itensRemovidos.length;
 
         if (totalDiferencas > 0) {
-          let mensagemConfirmacao = `Reimportação detectada! Diferenças encontradas:\n\n`;
-          mensagemConfirmacao += `• ${totalIguais} itens iguais (serão ignorados)\n`;
-          if (itensModificados.length > 0) {
-            mensagemConfirmacao += `• ${itensModificados.length} itens com valores alterados\n`;
-          }
-          if (itensNovos.length > 0) {
-            mensagemConfirmacao += `• ${itensNovos.length} itens novos\n`;
-          }
-          if (itensRemovidos.length > 0) {
-            mensagemConfirmacao += `• ${itensRemovidos.length} itens removidos\n`;
-          }
-          mensagemConfirmacao += `\nDeseja continuar com a atualização?`;
-
-          if (!window.confirm(mensagemConfirmacao)) {
-            setImportando(false);
-            setMensagem({ tipo: 'info', texto: 'Importação cancelada pelo usuário.' });
-            return;
-          }
+          // Mostra modal e aguarda confirmação
+          await new Promise<void>((resolve, reject) => {
+            setModalResumo({
+              iguais: totalIguais,
+              modificados: itensModificados.length,
+              novos: itensNovos.length,
+              removidos: itensRemovidos.length,
+              onConfirm: async () => {
+                setModalResumo(null);
+                resolve();
+              },
+              onCancel: () => {
+                setModalResumo(null);
+                reject(new Error('Importação cancelada pelo usuário'));
+              }
+            });
+          });
         }
 
         // Atualiza status da semana
@@ -1269,15 +1274,24 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
 
       setMensagem({ tipo: 'sucesso', texto: 'Previsão semanal importada com sucesso.' });
       await carregarPrevisaoExistente(semanaSelecionada, usuario.usr_id);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao importar previsão semanal:', error);
-      setMensagem({
-        tipo: 'erro',
-        texto: traduzirErroSupabase(
-          error,
-          'Falha ao importar a previsão semanal. Verifique os dados e tente novamente.',
-        ),
-      });
+
+      // Se foi cancelamento pelo usuário, mostra mensagem diferente
+      if (error.message === 'Importação cancelada pelo usuário') {
+        setMensagem({
+          tipo: 'info',
+          texto: 'Importação cancelada pelo usuário.',
+        });
+      } else {
+        setMensagem({
+          tipo: 'erro',
+          texto: traduzirErroSupabase(
+            error,
+            'Falha ao importar a previsão semanal. Verifique os dados e tente novamente.',
+          ),
+        });
+      }
     } finally {
       setImportando(false);
     }
@@ -1662,6 +1676,85 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
           )}
         </Card>
       </div>
+
+      {/* Modal de confirmação de reimportação */}
+      {modalResumo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white shadow-xl">
+            <div className="border-b border-gray-200 px-6 py-4">
+              <h3 className="text-lg font-semibold text-gray-900">Reimportação Detectada</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                A previsão desta semana já possui dados registrados. Revise as alterações abaixo:
+              </p>
+            </div>
+
+            <div className="space-y-3 px-6 py-4">
+              <div className="flex items-center justify-between rounded-md border border-success-200 bg-success-50/40 px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-success-700">✓</span>
+                  <span className="text-sm font-medium text-success-900">Itens iguais</span>
+                </div>
+                <span className="text-lg font-bold text-success-700">{modalResumo.iguais}</span>
+              </div>
+
+              {modalResumo.modificados > 0 && (
+                <div className="flex items-center justify-between rounded-md border border-warning-200 bg-warning-50/40 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-warning-700">⚠</span>
+                    <span className="text-sm font-medium text-warning-900">Itens modificados</span>
+                  </div>
+                  <span className="text-lg font-bold text-warning-700">{modalResumo.modificados}</span>
+                </div>
+              )}
+
+              {modalResumo.novos > 0 && (
+                <div className="flex items-center justify-between rounded-md border border-primary-200 bg-primary-50/40 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-primary-700">+</span>
+                    <span className="text-sm font-medium text-primary-900">Itens novos</span>
+                  </div>
+                  <span className="text-lg font-bold text-primary-700">{modalResumo.novos}</span>
+                </div>
+              )}
+
+              {modalResumo.removidos > 0 && (
+                <div className="flex items-center justify-between rounded-md border border-error-200 bg-error-50/40 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-error-700">−</span>
+                    <span className="text-sm font-medium text-error-900">Itens removidos</span>
+                  </div>
+                  <span className="text-lg font-bold text-error-700">{modalResumo.removidos}</span>
+                </div>
+              )}
+
+              <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 px-4 py-3">
+                <p className="text-xs text-gray-600">
+                  <strong>Atenção:</strong> Itens iguais serão ignorados. Itens modificados e removidos serão excluídos do banco e substituídos pelos novos valores. Itens novos serão inseridos.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 border-t border-gray-200 px-6 py-4">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={modalResumo.onCancel}
+                className="flex-1"
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={modalResumo.onConfirm}
+                className="flex-1"
+              >
+                Confirmar Importação
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };
