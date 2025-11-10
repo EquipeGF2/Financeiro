@@ -353,6 +353,7 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
     onConfirm: () => Promise<void>;
     onCancel: () => void;
   } | null>(null);
+  const [modoEdicao, setModoEdicao] = useState(false);
   const arquivoInputRef = useRef<HTMLInputElement | null>(null);
 
   const datasTabela = useMemo(() => {
@@ -1010,6 +1011,87 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
       };
     });
   };
+
+  const handleIniciarEdicao = () => {
+    if (!previsaoExistente || !previsaoExistente.itens.length) {
+      setMensagem({ tipo: 'erro', texto: 'Não há dados para editar.' });
+      return;
+    }
+
+    // Agrupa itens por categoria e tipo
+    const itensPorCategoria = new Map<string, PrevisaoItemRegistrado[]>();
+
+    previsaoExistente.itens.forEach(item => {
+      // Ignora saldo_diario e saldo_acumulado (são calculados)
+      if (item.tipo === 'saldo_diario' || item.tipo === 'saldo_acumulado') {
+        return;
+      }
+
+      const chave = `${item.tipo}|${item.categoria}`;
+      const grupo = itensPorCategoria.get(chave) || [];
+      grupo.push(item);
+      itensPorCategoria.set(chave, grupo);
+    });
+
+    // Converte grupos em LinhaImportada
+    const linhasEditaveis: LinhaImportada[] = [];
+    const datasSemanaSelecionada = obterDatasDaSemana(semanaSelecionada);
+
+    itensPorCategoria.forEach((itens, chave) => {
+      const primeiroItem = itens[0];
+
+      // Cria valores para cada data da semana
+      const valores = datasSemanaSelecionada.map(data => {
+        const itemNaData = itens.find(i => i.data === data);
+        const valor = itemNaData?.valor ?? 0;
+        return criarDiaValor(data, valor);
+      });
+
+      const linha: LinhaImportada = {
+        id: gerarUUID(),
+        tipo: primeiroItem.tipo as 'gasto' | 'receita' | 'saldo_inicial',
+        titulo: primeiroItem.categoria,
+        valores,
+        selecionado: true,
+        areaId: primeiroItem.areaId,
+        contaId: primeiroItem.contaId,
+        tipoReceitaId: null, // Precisamos buscar do primeiro item se for receita
+        bancoId: primeiroItem.bancoId,
+        erros: [],
+      };
+
+      // Se for receita, tenta identificar o tipo de receita
+      if (linha.tipo === 'receita' && linha.contaId) {
+        const conta = encontrarContaPorId(contas, linha.contaId);
+        const tituloNormalizado = ajustarTituloNormalizado(normalizarTexto(linha.titulo));
+        const mapaTipos = new Map(tiposReceita.map((tipo) => [tipo.normalizado, tipo]));
+        const tipoPreferido = encontrarTipoPreferido(tituloNormalizado, mapaTipos);
+        linha.tipoReceitaId = tipoPreferido?.id ?? null;
+      }
+
+      linha.erros = validarLinha(linha);
+      linhasEditaveis.push(linha);
+    });
+
+    // Ordena: saldo_inicial primeiro, depois receitas, depois gastos
+    linhasEditaveis.sort((a, b) => {
+      const ordem = { saldo_inicial: 0, receita: 1, gasto: 2 };
+      const ordemA = ordem[a.tipo] ?? 3;
+      const ordemB = ordem[b.tipo] ?? 3;
+      if (ordemA !== ordemB) return ordemA - ordemB;
+      return a.titulo.localeCompare(b.titulo);
+    });
+
+    setLinhas(linhasEditaveis);
+    setModoEdicao(true);
+    setMensagem({ tipo: 'info', texto: 'Modo de edição ativado. Ajuste os valores e clique em "Salvar alterações".' });
+  };
+
+  const handleCancelarEdicao = () => {
+    setModoEdicao(false);
+    setLinhas([]);
+    setMensagem(null);
+  };
   const handleImportar = async () => {
     if (!usuario) {
       setMensagem({ tipo: 'erro', texto: 'Usuário não identificado para importar a previsão.' });
@@ -1127,7 +1209,29 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
       const semanaFim = toISODate(addDays(new Date(`${semanaSelecionada}T00:00:00`), 4));
       let chavesParaInserir = new Set<string>(); // Chaves dos itens que devem ser inseridos
 
-      if (!semanaId) {
+      // Se estamos em modo de edição, remove todos os itens existentes e insere os novos
+      if (modoEdicao && semanaId) {
+        // Deleta todos os itens da semana
+        const { error: deletarErro } = await supabase
+          .from('pvi_previsao_itens')
+          .delete()
+          .eq('pvi_pvs_id', semanaId);
+
+        if (deletarErro) throw deletarErro;
+
+        // Atualiza status da semana
+        const { error: atualizarErro } = await supabase
+          .from('pvs_semanas')
+          .update({ pvs_semana_fim: semanaFim, pvs_status: 'editado' })
+          .eq('pvs_id', semanaId);
+        if (atualizarErro) throw atualizarErro;
+
+        // Marca todos os itens para inserção
+        itensParaInserir.forEach(item => {
+          const chave = `${item.data}|${item.tipo}|${item.categoria}`;
+          chavesParaInserir.add(chave);
+        });
+      } else if (!semanaId) {
         const { data: criada, error: criarErro } = await supabase
           .from('pvs_semanas')
           .insert({
@@ -1272,7 +1376,18 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
         if (inserirErro) throw inserirErro;
       }
 
-      setMensagem({ tipo: 'sucesso', texto: 'Previsão semanal importada com sucesso.' });
+      const mensagemSucesso = modoEdicao
+        ? 'Alterações salvas com sucesso.'
+        : 'Previsão semanal importada com sucesso.';
+
+      setMensagem({ tipo: 'sucesso', texto: mensagemSucesso });
+
+      // Limpa modo de edição se estava ativo
+      if (modoEdicao) {
+        setModoEdicao(false);
+        setLinhas([]);
+      }
+
       await carregarPrevisaoExistente(semanaSelecionada, usuario.usr_id);
     } catch (error: any) {
       console.error('Erro ao importar previsão semanal:', error);
@@ -1348,41 +1463,43 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
               </label>
 
               <div className="flex flex-col gap-3">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-                  <label className="flex flex-col text-sm font-medium text-gray-700">
-                    Arquivo Excel
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls"
-                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      ref={arquivoInputRef}
-                      onChange={handleArquivoChange}
-                      disabled={processandoArquivo || !edicaoPermitida}
-                    />
-                  </label>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={handleCancelarArquivo}
-                    disabled={!arquivoNome || processandoArquivo}
-                  >
-                    Cancelar seleção
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="primary"
-                    onClick={handleImportar}
-                    disabled={
-                      !edicaoPermitida || importando || linhas.length === 0 || processandoArquivo
-                    }
-                    loading={importando}
-                  >
-                    Importar previsão
-                  </Button>
-                </div>
+                {!modoEdicao && (
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                    <label className="flex flex-col text-sm font-medium text-gray-700">
+                      Arquivo Excel
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls"
+                        className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        ref={arquivoInputRef}
+                        onChange={handleArquivoChange}
+                        disabled={processandoArquivo || !edicaoPermitida}
+                      />
+                    </label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={handleCancelarArquivo}
+                      disabled={!arquivoNome || processandoArquivo}
+                    >
+                      Cancelar seleção
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="primary"
+                      onClick={handleImportar}
+                      disabled={
+                        !edicaoPermitida || importando || linhas.length === 0 || processandoArquivo
+                      }
+                      loading={importando}
+                    >
+                      Importar previsão
+                    </Button>
+                  </div>
+                )}
 
                 {/* Botões de edição e inclusão */}
-                {previsaoExistente && (
+                {previsaoExistente && !modoEdicao && (
                   <div className="flex flex-col gap-2 rounded-md border border-primary-200 bg-primary-50/30 p-3">
                     <p className="text-xs font-medium text-primary-800">
                       Ações sobre a previsão existente:
@@ -1392,7 +1509,7 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
                         type="button"
                         variant="secondary"
                         size="sm"
-                        onClick={() => alert('Funcionalidade de edição será implementada em breve.\n\nPermitirá editar valores já lançados na previsão semanal.')}
+                        onClick={handleIniciarEdicao}
                         disabled={!edicaoPermitida}
                       >
                         Editar lançamentos
@@ -1410,6 +1527,36 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
                     <p className="text-xs text-gray-600">
                       <strong>Importante:</strong> Apenas 1 área pode ser cadastrada por semana.
                     </p>
+                  </div>
+                )}
+
+                {/* Modo de edição ativo */}
+                {modoEdicao && (
+                  <div className="flex flex-col gap-2 rounded-md border border-warning-200 bg-warning-50/30 p-3">
+                    <p className="text-xs font-medium text-warning-800">
+                      Modo de edição ativo
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleCancelarEdicao}
+                        disabled={importando}
+                      >
+                        Cancelar edição
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="sm"
+                        onClick={handleImportar}
+                        disabled={importando || linhas.length === 0}
+                        loading={importando}
+                      >
+                        Salvar alterações
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1448,7 +1595,7 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
           </Card>
         )}
         {linhas.length > 0 && (
-          <Card title="Pré-visualização da importação">
+          <Card title={modoEdicao ? "Edição de lançamentos" : "Pré-visualização da importação"}>
             <div className="space-y-4">
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 text-sm">
