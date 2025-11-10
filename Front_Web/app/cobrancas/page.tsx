@@ -15,20 +15,21 @@ import { traduzirErroSupabase } from '@/lib/supabaseErrors';
 
 type Mensagem = { tipo: 'sucesso' | 'erro' | 'info'; texto: string };
 
-type CategoriaReceita = 'depositos' | 'titulos' | 'outras';
-
 type TipoOption = {
   id: number;
   nome: string;
   codigo: string;
-  categoria: CategoriaReceita;
 };
+
+type CategoriaPrincipal = 'titulos' | 'depositos';
 
 type ContaOption = {
   id: number;
+  codigo: string;
   nome: string;
   bancoId: number | null;
   bancoNome: string | null;
+  categoria: CategoriaPrincipal | null;
 };
 
 type BancoOption = {
@@ -50,7 +51,6 @@ type ResumoTipo = {
   tipoId: number;
   nome: string;
   codigo: string;
-  categoria: CategoriaReceita;
   total: number;
 };
 
@@ -121,7 +121,7 @@ export default function LancamentoCobrancaPage() {
   const [contas, setContas] = useState<ContaOption[]>([]);
   const [bancos, setBancos] = useState<BancoOption[]>([]);
   const [lancamentosExistentes, setLancamentosExistentes] = useState<Record<string, LancamentoExistente>>({});
-  const [valoresPorBanco, setValoresPorBanco] = useState<Record<number, Record<number, string>>>({});
+  const [valoresPorBanco, setValoresPorBanco] = useState<Record<number, ValoresTextoPorCategoria>>({});
 
   const [dataReferencia, setDataReferencia] = useState(() => toISODate(new Date()));
   const [bancoSelecionadoId, setBancoSelecionadoId] = useState<number | null>(null);
@@ -144,55 +144,40 @@ export default function LancamentoCobrancaPage() {
   const contasPorBanco = useMemo(() => {
     const mapa = new Map<number, ContaOption[]>();
     contas.forEach((conta) => {
-      if (conta.bancoId === null) return;
-      const atual = mapa.get(conta.bancoId) ?? [];
-      atual.push(conta);
+      if (conta.bancoId === null || !conta.categoria) return;
+      const atual = mapa.get(conta.bancoId) ?? {};
+      if (!atual[conta.categoria]) {
+        atual[conta.categoria] = conta;
+      }
       mapa.set(conta.bancoId, atual);
     });
     return mapa;
   }, [contas]);
 
-  const tiposPorCategoria = useMemo(() => {
-    const mapa: Record<CategoriaReceita, TipoOption[]> = {
-      depositos: [],
-      titulos: [],
-      outras: [],
-    };
-
-    tipos.forEach((tipo) => {
-      mapa[tipo.categoria].push(tipo);
+  const tiposOrdenados = useMemo(() => {
+    return [...tipos].sort((a, b) => {
+      const diffCodigo = a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true, sensitivity: 'base' });
+      if (diffCodigo !== 0) return diffCodigo;
+      return a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' });
     });
-
-    (Object.keys(mapa) as CategoriaReceita[]).forEach((categoria) => {
-      mapa[categoria] = mapa[categoria].sort((a, b) => {
-        const diffCodigo = a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true, sensitivity: 'base' });
-        if (diffCodigo !== 0) return diffCodigo;
-        return a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' });
-      });
-    });
-
-    return mapa;
   }, [tipos]);
 
-  const resumoFormularioPorBanco = useMemo<ResumoBanco[]>(() => {
-    const totais = new Map<number, number>();
 
-    Object.entries(valoresPorBanco).forEach(([bancoIdTexto, valores]) => {
-      const totalCalculado = Object.values(valores).reduce((acc, valorTexto) => {
-        const valor = avaliarValor(valorTexto);
-        if (valor !== null && Number.isFinite(valor)) {
-          return acc + valor;
-        }
-        return acc;
-      }, 0);
+  const valoresSalvosPorBanco = useMemo<Record<number, ValoresNumericosPorCategoria>>(() => {
+    const base: Record<number, ValoresNumericosPorCategoria> = {};
 
-      if (totalCalculado <= 0) {
+    Object.values(lancamentosExistentes).forEach((registro) => {
+      const conta = contasMap.get(registro.contaId);
+      const bancoId = conta?.bancoId;
+      const categoria = conta?.categoria;
+
+      if (bancoId === null || bancoId === undefined || !categoria) {
         return;
       }
 
-      const bancoId = Number(bancoIdTexto);
-      totais.set(bancoId, Math.round(totalCalculado * 100) / 100);
-    });
+      if (!base[bancoId]) {
+        base[bancoId] = criarMapaNumerico();
+      }
 
     return Array.from(totais.entries())
       .map(([bancoId, total]) => {
@@ -217,35 +202,55 @@ export default function LancamentoCobrancaPage() {
       outras: [],
     };
 
-    tipos.forEach((tipo) => {
-      let total = 0;
+  const totaisSalvosPorBanco = useMemo(() => {
+    const mapa = new Map<number, number>();
+    Object.entries(valoresSalvosPorBanco).forEach(([bancoId, valores]) => {
+      const total = Object.values(valores).reduce((accBanco, categorias) => {
+        return (
+          accBanco +
+          Object.values(categorias).reduce((accCategoria, valor) => accCategoria + valor, 0)
+        );
+      }, 0);
+      mapa.set(Number(bancoId), Math.round(total * 100) / 100);
+    });
+    return mapa;
+  }, [valoresSalvosPorBanco]);
 
-      Object.values(valoresPorBanco).forEach((valoresBanco) => {
-        const valorCalculado = avaliarValor(valoresBanco[tipo.id] ?? '');
-        if (valorCalculado !== null && Number.isFinite(valorCalculado)) {
-          total += valorCalculado;
-        }
-      });
+  const resumoLancadoPorBanco = useMemo<ResumoBanco[]>(() => {
+    const linhas: ResumoBanco[] = [];
 
-      base[tipo.categoria].push({
-        tipoId: tipo.id,
-        nome: tipo.nome,
-        codigo: tipo.codigo,
-        categoria: tipo.categoria,
+    Object.entries(valoresSalvosPorBanco).forEach(([bancoIdTexto, valores]) => {
+      const total = Object.values(valores).reduce((accBanco, categoriaValores) => {
+        return (
+          accBanco +
+          Object.values(categoriaValores).reduce((accCategoria, valor) => {
+            if (valor > 0 && Number.isFinite(valor)) {
+              return accCategoria + valor;
+            }
+            return accCategoria;
+          }, 0)
+        );
+      }, 0);
+
+      if (total <= 0) {
+        return;
+      }
+
+      const bancoId = Number(bancoIdTexto);
+      const banco = bancos.find((item) => item.id === bancoId);
+      linhas.push({
+        bancoId,
+        bancoNome: banco?.nome ?? 'Sem banco vinculado',
         total: Math.round(total * 100) / 100,
       });
     });
 
-    (Object.keys(base) as CategoriaReceita[]).forEach((categoria) => {
-      base[categoria] = base[categoria].sort((a, b) => {
-        const codigoDiff = a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true, sensitivity: 'base' });
-        if (codigoDiff !== 0) return codigoDiff;
-        return a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' });
-      });
-    });
+    return linhas.sort((a, b) => a.bancoNome.localeCompare(b.bancoNome, 'pt-BR', { sensitivity: 'base' }));
+  }, [bancos, valoresSalvosPorBanco]);
 
-    return base;
-  }, [tipos, valoresPorBanco]);
+  const totalLancadoPorBanco = useMemo(() => {
+    return resumoLancadoPorBanco.reduce((acc, item) => acc + item.total, 0);
+  }, [resumoLancadoPorBanco]);
 
   const resumoTiposOrdenado = useMemo(() => {
     const linhas: ResumoTipo[] = [];
@@ -271,32 +276,34 @@ export default function LancamentoCobrancaPage() {
   const valoresSalvosPorBanco = useMemo<Record<number, Record<number, number>>>(() => {
     const base: Record<number, Record<number, number>> = {};
 
-    Object.values(lancamentosExistentes).forEach((registro) => {
-      const conta = contasMap.get(registro.contaId);
-      const bancoId = conta?.bancoId;
+    const linhas: ResumoTipo[] = [];
 
-      if (bancoId === null || bancoId === undefined) {
+    totais.forEach((total, tipoId) => {
+      const tipo = tiposMap.get(tipoId);
+      if (!tipo) {
         return;
       }
 
-      if (!base[bancoId]) {
-        base[bancoId] = {};
+      linhas.push({
+        tipoId,
+        nome: tipo.nome,
+        codigo: tipo.codigo,
+        total: Math.round(total * 100) / 100,
+      });
+    });
+
+    return linhas.sort((a, b) => {
+      const codigoDiff = a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true, sensitivity: 'base' });
+      if (codigoDiff !== 0) {
+        return codigoDiff;
       }
-
-      base[bancoId][registro.tipoId] = (base[bancoId][registro.tipoId] ?? 0) + registro.valor;
+      return a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' });
     });
+  }, [tiposMap, valoresSalvosPorBanco]);
 
-    return base;
-  }, [contasMap, lancamentosExistentes]);
-
-  const totaisSalvosPorBanco = useMemo(() => {
-    const mapa = new Map<number, number>();
-    Object.entries(valoresSalvosPorBanco).forEach(([bancoId, valores]) => {
-      const total = Object.values(valores).reduce((acc, valor) => acc + valor, 0);
-      mapa.set(Number(bancoId), Math.round(total * 100) / 100);
-    });
-    return mapa;
-  }, [valoresSalvosPorBanco]);
+  const totalLancadoPorTipo = useMemo(() => {
+    return resumoLancadoPorTipo.reduce((acc, item) => acc + item.total, 0);
+  }, [resumoLancadoPorTipo]);
 
   const resumoLancadoPorBanco = useMemo<ResumoBanco[]>(() => {
     const linhas: ResumoBanco[] = [];
@@ -394,18 +401,22 @@ export default function LancamentoCobrancaPage() {
       return;
     }
 
-    const novoMapa: Record<number, Record<number, string>> = {};
+    const novoMapa: Record<number, ValoresTextoPorCategoria> = {};
     bancos.forEach((banco) => {
-      const salvosBanco = valoresSalvosPorBanco[banco.id] ?? {};
-      const valores = tipos.reduce((acc, tipo) => {
-        const salvo = salvosBanco[tipo.id] ?? 0;
-        acc[tipo.id] = salvo > 0 ? formatarValorParaInput(salvo) : '';
-        return acc;
-      }, {} as Record<number, string>);
+      const salvosBanco = valoresSalvosPorBanco[banco.id] ?? criarMapaNumerico();
+      const valores = criarMapaTexto();
+
+      CATEGORIAS_PRINCIPAIS.forEach(({ id }) => {
+        tiposOrdenados.forEach((tipo) => {
+          const salvo = salvosBanco[id]?.[tipo.id] ?? 0;
+          valores[id][tipo.id] = salvo > 0 ? formatarValorParaInput(salvo) : '';
+        });
+      });
+
       novoMapa[banco.id] = valores;
     });
     setValoresPorBanco(novoMapa);
-  }, [bancos, tipos, valoresSalvosPorBanco]);
+  }, [bancos, tiposOrdenados, valoresSalvosPorBanco]);
 
   const carregarLancamentosDia = useCallback(
     async (usuarioAtual: UsuarioRow, data: string, contasBase: ContaOption[] = []) => {
@@ -477,7 +488,7 @@ export default function LancamentoCobrancaPage() {
             .order('tpr_nome', { ascending: true }),
           supabase
             .from('ctr_contas_receita')
-            .select('ctr_id, ctr_nome, ctr_ban_id, ban_bancos(ban_nome)')
+            .select('ctr_id, ctr_nome, ctr_codigo, ctr_ban_id, ban_bancos(ban_nome)')
             .eq('ctr_ativo', true)
             .order('ctr_nome', { ascending: true }),
           supabase
@@ -495,18 +506,20 @@ export default function LancamentoCobrancaPage() {
           id: Number(tipo.tpr_id),
           nome: tipo.tpr_nome ?? 'Tipo sem nome',
           codigo: tipo.tpr_codigo ?? '',
-          categoria: obterCategoriaPorCodigo(tipo.tpr_codigo ?? ''),
         }));
 
         const contasFormatadas: ContaOption[] = (contasRes.data ?? []).map((conta) => {
           const bancoRelacionado = Array.isArray(conta.ban_bancos)
             ? conta.ban_bancos[0]
             : (conta.ban_bancos as { ban_nome?: string | null } | null);
+          const codigo = typeof conta.ctr_codigo === 'string' ? conta.ctr_codigo : String(conta.ctr_codigo ?? '');
           return {
             id: Number(conta.ctr_id),
+            codigo,
             nome: conta.ctr_nome ?? 'Conta sem nome',
             bancoId: conta.ctr_ban_id !== null ? Number(conta.ctr_ban_id) : null,
             bancoNome: bancoRelacionado?.ban_nome ?? 'Sem banco vinculado',
+            categoria: obterCategoriaConta(codigo),
           } satisfies ContaOption;
         });
 
@@ -546,19 +559,32 @@ export default function LancamentoCobrancaPage() {
     carregarLancamentosDia(usuario, dataReferencia, contas);
   }, [usuario, contas, tipos, dataReferencia, carregarLancamentosDia]);
 
-  const handleValorBancoChange = (bancoId: number, tipoId: number, valor: string) => {
-    setValoresPorBanco((prev) => ({
-      ...prev,
-      [bancoId]: {
-        ...(prev[bancoId] ?? {}),
+  const handleValorBancoChange = (
+    bancoId: number,
+    categoria: CategoriaPrincipal,
+    tipoId: number,
+    valor: string,
+  ) => {
+    setValoresPorBanco((prev) => {
+      const atual = { ...prev };
+      const mapaBanco = { ...(atual[bancoId] ?? criarMapaTexto()) };
+      mapaBanco[categoria] = {
+        ...(mapaBanco[categoria] ?? {}),
         [tipoId]: valor,
-      },
-    }));
+      };
+      atual[bancoId] = mapaBanco;
+      return atual;
+    });
   };
 
-  const handlePreencherValorSalvo = (bancoId: number, tipoId: number) => {
-    const valorSalvo = valoresSalvosPorBanco[bancoId]?.[tipoId] ?? 0;
-    handleValorBancoChange(bancoId, tipoId, valorSalvo > 0 ? formatarValorParaInput(valorSalvo) : '');
+  const handlePreencherValorSalvo = (bancoId: number, categoria: CategoriaPrincipal, tipoId: number) => {
+    const valorSalvo = valoresSalvosPorBanco[bancoId]?.[categoria]?.[tipoId] ?? 0;
+    handleValorBancoChange(
+      bancoId,
+      categoria,
+      tipoId,
+      valorSalvo > 0 ? formatarValorParaInput(valorSalvo) : '',
+    );
   };
 
   const handleSalvarLancamentos = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -588,79 +614,51 @@ export default function LancamentoCobrancaPage() {
       return;
     }
 
-    const contasBanco = contasPorBanco.get(bancoSelecionadoId) ?? [];
-    if (contasBanco.length === 0) {
+    const contasBanco = contasCategoriaPorBanco.get(bancoSelecionadoId) ?? {};
+    const categoriasSemConta = CATEGORIAS_PRINCIPAIS.filter(({ id }) => !contasBanco[id]);
+
+    if (categoriasSemConta.length > 0) {
+      const codigosFaltantes = categoriasSemConta.map((categoria) => categoria.codigoConta).join(' e ');
       setMensagem({
         tipo: 'erro',
-        texto: 'Nenhuma conta de receita está vinculada ao banco selecionado. Associe ao menos uma conta antes de lançar cobranças.',
+        texto: `Associe as contas de receita ${codigosFaltantes} ao banco selecionado antes de registrar as cobranças.`,
       });
       return;
     }
 
-    const valoresBanco = valoresPorBanco[bancoSelecionadoId] ?? {};
+    const valoresBanco = valoresPorBanco[bancoSelecionadoId] ?? criarMapaTexto();
     const registrosParaUpsert: any[] = [];
     const idsParaExcluir: number[] = [];
 
-    tipos.forEach((tipo) => {
-      const valorEntrada = valoresBanco[tipo.id] ?? '';
-      const valorCalculado = avaliarValor(valorEntrada);
-      const registrosExistentes = contasBanco
-        .map((conta) => {
-          const chave = gerarChaveLancamento(conta.id, tipo.id);
-          return lancamentosExistentes[chave];
-        })
-        .filter((registro): registro is LancamentoExistente => Boolean(registro));
+    CATEGORIAS_PRINCIPAIS.forEach(({ id }) => {
+      const contaCategoria = contasBanco[id];
+      if (!contaCategoria) {
+        return;
+      }
 
-      if (valorCalculado && valorCalculado > 0) {
-        const distribuicao: { conta: ContaOption; valor: number; registro?: LancamentoExistente }[] = [];
+      const valoresCategoria = valoresBanco[id] ?? {};
 
-        if (registrosExistentes.length > 0) {
-          const totalExistente = registrosExistentes.reduce((acc, registro) => acc + registro.valor, 0);
-          if (totalExistente > 0) {
-            let acumulado = 0;
-            registrosExistentes.forEach((registro, index) => {
-              const conta = contasBanco.find((item) => item.id === registro.contaId);
-              if (!conta) return;
-              let valorConta = Math.round(valorCalculado * (registro.valor / totalExistente) * 100) / 100;
-              if (index === registrosExistentes.length - 1) {
-                valorConta = Math.round((valorCalculado - acumulado) * 100) / 100;
-              } else {
-                acumulado += valorConta;
-              }
-              distribuicao.push({ conta, valor: valorConta, registro });
-            });
-          }
-        }
+      tiposOrdenados.forEach((tipo) => {
+        const valorEntrada = valoresCategoria[tipo.id] ?? '';
+        const valorCalculado = avaliarValor(valorEntrada);
+        const chave = gerarChaveLancamento(contaCategoria.id, tipo.id);
+        const registroExistente = lancamentosExistentes[chave];
 
-        if (distribuicao.length === 0) {
-          const contaDestino = contasBanco[0];
-          if (!contaDestino) {
-            return;
-          }
-          distribuicao.push({ conta: contaDestino, valor: valorCalculado });
-        }
-
-        distribuicao.forEach(({ conta, valor, registro }) => {
-          if (!registro || Math.abs(valor - registro.valor) > 0.009) {
+        if (valorCalculado !== null && valorCalculado > 0) {
+          if (!registroExistente || Math.abs(valorCalculado - registroExistente.valor) > 0.009) {
             registrosParaUpsert.push({
-              cob_id: registro?.id,
-              cob_ctr_id: conta.id,
+              cob_id: registroExistente?.id,
+              cob_ctr_id: contaCategoria.id,
               cob_tpr_id: tipo.id,
               cob_usr_id: usuario.usr_id,
               cob_data: dataReferencia,
-              cob_valor: valor,
+              cob_valor: valorCalculado,
             });
           }
-        });
-
-        registrosExistentes.forEach((registro) => {
-          if (!distribuicao.some((item) => item.registro?.id === registro.id)) {
-            idsParaExcluir.push(registro.id);
-          }
-        });
-      } else {
-        registrosExistentes.forEach((registro) => idsParaExcluir.push(registro.id));
-      }
+        } else if (registroExistente) {
+          idsParaExcluir.push(registroExistente.id);
+        }
+      });
     });
 
     if (registrosParaUpsert.length === 0 && idsParaExcluir.length === 0) {
@@ -764,12 +762,14 @@ export default function LancamentoCobrancaPage() {
   const bancoSelecionado = bancoSelecionadoId
     ? bancos.find((banco) => banco.id === bancoSelecionadoId)
     : null;
-  let valoresBancoSelecionado: Record<number, string> = {};
-  let valoresSalvosBancoSelecionado: Record<number, number> = {};
+  let valoresBancoSelecionado: ValoresTextoPorCategoria = criarMapaTexto();
+  let valoresSalvosBancoSelecionado: ValoresNumericosPorCategoria = criarMapaNumerico();
+  let contasBancoSelecionado: Partial<Record<CategoriaPrincipal, ContaOption>> = {};
 
   if (bancoSelecionadoId !== null && bancoSelecionadoId !== undefined) {
-    valoresBancoSelecionado = valoresPorBanco[bancoSelecionadoId] ?? {};
-    valoresSalvosBancoSelecionado = valoresSalvosPorBanco[bancoSelecionadoId] ?? {};
+    valoresBancoSelecionado = valoresPorBanco[bancoSelecionadoId] ?? criarMapaTexto();
+    valoresSalvosBancoSelecionado = valoresSalvosPorBanco[bancoSelecionadoId] ?? criarMapaNumerico();
+    contasBancoSelecionado = contasCategoriaPorBanco.get(bancoSelecionadoId) ?? {};
   }
 
   const categoriaAtual = categoriasPrincipais.find((categoria) => categoria.id === categoriaSelecionada) ?? null;
@@ -954,7 +954,7 @@ export default function LancamentoCobrancaPage() {
               <div className="py-12">
                 <Loading text="Carregando lançamentos para a data selecionada..." />
               </div>
-            ) : bancos.length === 0 || tipos.length === 0 ? (
+            ) : bancos.length === 0 || tiposOrdenados.length === 0 ? (
               <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
                 Cadastre bancos ativos, contas e tipos de receita para habilitar os lançamentos de cobrança.
               </div>
@@ -1141,6 +1141,7 @@ export default function LancamentoCobrancaPage() {
                                       </Button>
                                     </div>
                                   </td>
+                                  <td colSpan={2}></td>
                                 </tr>
                               );
                             })}
@@ -1161,6 +1162,7 @@ export default function LancamentoCobrancaPage() {
                 </div>
               </div>
             )}
+
 
             <div className="flex justify-end">
               <Button
