@@ -515,16 +515,22 @@ const RelatorioPrevisaoSemanalPage: React.FC = () => {
         {relatorio && !carregandoDados && (
           <>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-lg border border-primary-200 bg-primary-50/60 p-4 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-wide text-primary-700">Total de Receitas</p>
-                <p className="mt-2 text-2xl font-semibold text-primary-900">{formatCurrency(totalReceitas)}</p>
+              <div className="rounded-lg border border-success-200 bg-success-50/60 p-4 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-wide text-success-700">Total de Receitas</p>
+                <p className={`mt-2 text-2xl font-semibold ${totalReceitas >= 0 ? 'text-success-800' : 'text-error-700'}`}>
+                  {formatCurrency(totalReceitas)}
+                </p>
               </div>
               <div className="rounded-lg border border-error-200 bg-error-50/70 p-4 shadow-sm">
                 <p className="text-xs font-semibold uppercase tracking-wide text-error-700">Total de Despesas</p>
-                <p className="mt-2 text-2xl font-semibold text-error-800">{formatCurrency(totalDespesas)}</p>
+                <p className={`mt-2 text-2xl font-semibold ${totalDespesas >= 0 ? 'text-error-800' : 'text-success-700'}`}>
+                  {formatCurrency(totalDespesas)}
+                </p>
               </div>
-              <div className="rounded-lg border border-success-200 bg-success-50/70 p-4 shadow-sm">
-                <p className="text-xs font-semibold uppercase tracking-wide text-success-700">Resultado da Semana</p>
+              <div className={`rounded-lg border p-4 shadow-sm ${resultadoSemana >= 0 ? 'border-success-200 bg-success-50/70' : 'border-error-200 bg-error-50/70'}`}>
+                <p className={`text-xs font-semibold uppercase tracking-wide ${resultadoSemana >= 0 ? 'text-success-700' : 'text-error-700'}`}>
+                  Resultado da Semana
+                </p>
                 <p className={`mt-2 text-2xl font-semibold ${resultadoSemana >= 0 ? 'text-success-800' : 'text-error-700'}`}>
                   {formatCurrency(resultadoSemana)}
                 </p>

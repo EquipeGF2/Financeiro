@@ -39,6 +39,8 @@ const TITULO_CORRECOES: Record<string, string> = {
   'com materail e consumo': 'material e consumo',
   'com material e consumo': 'material e consumo',
   'COM MATERIAL E CONSUMO': 'MATERIAL E CONSUMO',
+  'GASTO COM MATERIAL E CONSUMO': 'MATERIAL E CONSUMO',
+  'gasto com material e consumo': 'material e consumo',
 };
 
 const TIPO_RECEITA_PREFERENCIAS: Record<string, string> = {
