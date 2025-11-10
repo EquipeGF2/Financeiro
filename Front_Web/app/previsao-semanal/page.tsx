@@ -38,8 +38,6 @@ const RECEITA_PADROES: { padrao: RegExp; codigo: string }[] = [
 const TITULO_CORRECOES: Record<string, string> = {
   'com materail e consumo': 'material e consumo',
   'com material e consumo': 'material e consumo',
-  'COM MATERIAL E CONSUMO': 'MATERIAL E CONSUMO',
-  'GASTO COM MATERIAL E CONSUMO': 'MATERIAL E CONSUMO',
   'gasto com material e consumo': 'material e consumo',
 };
 
@@ -347,6 +345,16 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
 
   const [previsaoExistente, setPrevisaoExistente] = useState<SemanaResumo | null>(null);
   const [carregandoPrevisao, setCarregandoPrevisao] = useState(false);
+  const [modalResumo, setModalResumo] = useState<{
+    iguais: number;
+    modificados: number;
+    novos: number;
+    removidos: number;
+    onConfirm: () => Promise<void>;
+    onCancel: () => void;
+  } | null>(null);
+  const [modoEdicao, setModoEdicao] = useState(false);
+  const [modoInclusao, setModoInclusao] = useState(false);
   const arquivoInputRef = useRef<HTMLInputElement | null>(null);
 
   const datasTabela = useMemo(() => {
@@ -1004,6 +1012,247 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
       };
     });
   };
+
+  const handleIniciarEdicao = () => {
+    if (!previsaoExistente || !previsaoExistente.itens.length) {
+      setMensagem({ tipo: 'erro', texto: 'Não há dados para editar.' });
+      return;
+    }
+
+    // Agrupa itens por categoria e tipo
+    const itensPorCategoria = new Map<string, PrevisaoItemRegistrado[]>();
+
+    previsaoExistente.itens.forEach(item => {
+      // Ignora saldo_diario e saldo_acumulado (são calculados)
+      if (item.tipo === 'saldo_diario' || item.tipo === 'saldo_acumulado') {
+        return;
+      }
+
+      const chave = `${item.tipo}|${item.categoria}`;
+      const grupo = itensPorCategoria.get(chave) || [];
+      grupo.push(item);
+      itensPorCategoria.set(chave, grupo);
+    });
+
+    // Converte grupos em LinhaImportada
+    const linhasEditaveis: LinhaImportada[] = [];
+    const datasSemanaSelecionada = obterDatasDaSemana(semanaSelecionada);
+
+    itensPorCategoria.forEach((itens, chave) => {
+      const primeiroItem = itens[0];
+
+      // Cria valores para cada data da semana
+      const valores = datasSemanaSelecionada.map(data => {
+        const itemNaData = itens.find(i => i.data === data);
+        const valor = itemNaData?.valor ?? 0;
+        return criarDiaValor(data, valor);
+      });
+
+      const linha: LinhaImportada = {
+        id: gerarUUID(),
+        tipo: primeiroItem.tipo as 'gasto' | 'receita' | 'saldo_inicial',
+        titulo: primeiroItem.categoria,
+        valores,
+        selecionado: true,
+        areaId: primeiroItem.areaId,
+        contaId: primeiroItem.contaId,
+        tipoReceitaId: null, // Precisamos buscar do primeiro item se for receita
+        bancoId: primeiroItem.bancoId,
+        erros: [],
+      };
+
+      // Se for receita, tenta identificar o tipo de receita
+      if (linha.tipo === 'receita' && linha.contaId) {
+        const conta = encontrarContaPorId(contas, linha.contaId);
+        const tituloNormalizado = ajustarTituloNormalizado(normalizarTexto(linha.titulo));
+        const mapaTipos = new Map(tiposReceita.map((tipo) => [tipo.normalizado, tipo]));
+        const tipoPreferido = encontrarTipoPreferido(tituloNormalizado, mapaTipos);
+        linha.tipoReceitaId = tipoPreferido?.id ?? null;
+      }
+
+      linha.erros = validarLinha(linha);
+      linhasEditaveis.push(linha);
+    });
+
+    // Ordena: saldo_inicial primeiro, depois receitas, depois gastos
+    linhasEditaveis.sort((a, b) => {
+      const ordem = { saldo_inicial: 0, receita: 1, gasto: 2 };
+      const ordemA = ordem[a.tipo] ?? 3;
+      const ordemB = ordem[b.tipo] ?? 3;
+      if (ordemA !== ordemB) return ordemA - ordemB;
+      return a.titulo.localeCompare(b.titulo);
+    });
+
+    setLinhas(linhasEditaveis);
+    setModoEdicao(true);
+    setMensagem({ tipo: 'info', texto: 'Modo de edição ativado. Ajuste os valores e clique em "Salvar alterações".' });
+  };
+
+  const handleCancelarEdicao = () => {
+    setModoEdicao(false);
+    setLinhas([]);
+    setMensagem(null);
+  };
+
+  const handleIniciarInclusao = () => {
+    if (!previsaoExistente) {
+      setMensagem({ tipo: 'erro', texto: 'Não há previsão registrada para incluir novos itens.' });
+      return;
+    }
+
+    const datasSemanaSelecionada = obterDatasDaSemana(semanaSelecionada);
+
+    // Cria uma linha vazia de gasto
+    const novaLinhaGasto: LinhaImportada = {
+      id: gerarUUID(),
+      tipo: 'gasto',
+      titulo: '',
+      valores: datasSemanaSelecionada.map(data => criarDiaValor(data, 0)),
+      selecionado: true,
+      areaId: null,
+      contaId: null,
+      tipoReceitaId: null,
+      bancoId: null,
+      erros: ['Selecione uma área para este gasto.'],
+    };
+
+    // Cria uma linha vazia de receita
+    const novaLinhaReceita: LinhaImportada = {
+      id: gerarUUID(),
+      tipo: 'receita',
+      titulo: '',
+      valores: datasSemanaSelecionada.map(data => criarDiaValor(data, 0)),
+      selecionado: true,
+      areaId: null,
+      contaId: null,
+      tipoReceitaId: null,
+      bancoId: null,
+      erros: ['Selecione uma conta de receita.', 'Informe o tipo de receita correspondente.'],
+    };
+
+    setLinhas([novaLinhaReceita, novaLinhaGasto]);
+    setModoInclusao(true);
+    setMensagem({
+      tipo: 'info',
+      texto: 'Modo de inclusão ativado. Preencha os dados da nova categoria e clique em "Salvar inclusão".'
+    });
+  };
+
+  const handleCancelarInclusao = () => {
+    setModoInclusao(false);
+    setLinhas([]);
+    setMensagem(null);
+  };
+
+  const handleAdicionarLinha = (tipo: 'gasto' | 'receita') => {
+    const datasSemanaSelecionada = obterDatasDaSemana(semanaSelecionada);
+
+    if (tipo === 'gasto') {
+      const novaLinha: LinhaImportada = {
+        id: gerarUUID(),
+        tipo: 'gasto',
+        titulo: '',
+        valores: datasSemanaSelecionada.map(data => criarDiaValor(data, 0)),
+        selecionado: true,
+        areaId: null,
+        contaId: null,
+        tipoReceitaId: null,
+        bancoId: null,
+        erros: ['Selecione uma área para este gasto.'],
+      };
+      setLinhas(prev => [...prev, novaLinha]);
+    } else {
+      const novaLinha: LinhaImportada = {
+        id: gerarUUID(),
+        tipo: 'receita',
+        titulo: '',
+        valores: datasSemanaSelecionada.map(data => criarDiaValor(data, 0)),
+        selecionado: true,
+        areaId: null,
+        contaId: null,
+        tipoReceitaId: null,
+        bancoId: null,
+        erros: ['Selecione uma conta de receita.', 'Informe o tipo de receita correspondente.'],
+      };
+      setLinhas(prev => [novaLinha, ...prev]);
+    }
+  };
+
+  const handleTituloChange = (linhaId: string, novoTitulo: string) => {
+    atualizarLinha(linhaId, (linha) => ({
+      ...linha,
+      titulo: novoTitulo,
+    }));
+  };
+
+  const handleRemoverLinha = (linhaId: string) => {
+    setLinhas(prev => prev.filter(linha => linha.id !== linhaId));
+  };
+
+  const handleBaixarTemplate = async () => {
+    try {
+      const XLSX = await loadSheetJS();
+
+      // Cria dados de exemplo para a semana selecionada
+      const datasSemanaSelecionada = obterDatasDaSemana(semanaSelecionada);
+
+      // Cria cabeçalho com as datas
+      const header = ['Categoria', ...datasSemanaSelecionada.map(data => {
+        const [year, month, day] = data.split('-');
+        return `${day}/${month}`;
+      })];
+
+      // Dados de exemplo
+      const dadosExemplo = [
+        header,
+        ['Saldo Inicial', 50000, '', '', '', ''],
+        [''],
+        ['RECEITAS', '', '', '', '', ''],
+        ['Depósito e PIX', 10000, 8000, 12000, 9000, 11000],
+        ['Boleto', 5000, 4500, 6000, 5500, 5000],
+        ['Cartão Débito', 2000, 1800, 2200, 1900, 2100],
+        [''],
+        ['Gasto - Folha de Pagamento', 15000, '', '', '', ''],
+        ['Gasto - Material e Consumo', 3000, 2500, 3500, 2800, 3200],
+        ['Gasto - Serviços Terceiros', 2000, 1500, 2500, 1800, 2200],
+        ['Gasto - Impostos e Taxas', 1000, 800, 1200, 900, 1100],
+        [''],
+        ['', '', '', '', '', ''],
+        ['INSTRUÇÕES:', '', '', '', '', ''],
+        ['1. Preencha as datas no formato DD/MM ou DD/MM/AAAA', '', '', '', '', ''],
+        ['2. Receitas: use nomes como "Depósito e PIX", "Boleto", "Cartão Débito"', '', '', '', '', ''],
+        ['3. Gastos: comece com "Gasto -" ou "Gastos:" seguido do nome da área', '', '', '', '', ''],
+        ['4. Valores podem usar vírgula ou ponto como separador decimal', '', '', '', '', ''],
+        ['5. Células vazias serão interpretadas como valor zero', '', '', '', '', ''],
+      ];
+
+      // Cria planilha
+      const ws = XLSX.utils.aoa_to_sheet(dadosExemplo);
+
+      // Define larguras das colunas
+      const colWidths = [{ wch: 30 }, ...datasSemanaSelecionada.map(() => ({ wch: 12 }))];
+      ws['!cols'] = colWidths;
+
+      // Cria workbook
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Previsão Semanal');
+
+      // Gera arquivo
+      const nomeArquivo = `template_previsao_${semanaSelecionada}.xlsx`;
+      XLSX.writeFile(wb, nomeArquivo);
+
+      setMensagem({
+        tipo: 'sucesso',
+        texto: `Template baixado: ${nomeArquivo}`,
+      });
+    } catch (error) {
+      console.error('Erro ao gerar template:', error);
+      setMensagem({
+        tipo: 'erro',
+        texto: 'Não foi possível gerar o template. Tente novamente.',
+      });
+    }
+  };
   const handleImportar = async () => {
     if (!usuario) {
       setMensagem({ tipo: 'erro', texto: 'Usuário não identificado para importar a previsão.' });
@@ -1121,7 +1370,43 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
       const semanaFim = toISODate(addDays(new Date(`${semanaSelecionada}T00:00:00`), 4));
       let chavesParaInserir = new Set<string>(); // Chaves dos itens que devem ser inseridos
 
-      if (!semanaId) {
+      // Se estamos em modo de edição, remove todos os itens existentes e insere os novos
+      if (modoEdicao && semanaId) {
+        // Deleta todos os itens da semana
+        const { error: deletarErro } = await supabase
+          .from('pvi_previsao_itens')
+          .delete()
+          .eq('pvi_pvs_id', semanaId);
+
+        if (deletarErro) throw deletarErro;
+
+        // Atualiza status da semana
+        const { error: atualizarErro } = await supabase
+          .from('pvs_semanas')
+          .update({ pvs_semana_fim: semanaFim, pvs_status: 'editado' })
+          .eq('pvs_id', semanaId);
+        if (atualizarErro) throw atualizarErro;
+
+        // Marca todos os itens para inserção
+        itensParaInserir.forEach(item => {
+          const chave = `${item.data}|${item.tipo}|${item.categoria}`;
+          chavesParaInserir.add(chave);
+        });
+      } else if (modoInclusao && semanaId) {
+        // Modo de inclusão: apenas adiciona novos itens sem deletar existentes
+        // Atualiza status da semana
+        const { error: atualizarErro } = await supabase
+          .from('pvs_semanas')
+          .update({ pvs_semana_fim: semanaFim, pvs_status: 'complementado' })
+          .eq('pvs_id', semanaId);
+        if (atualizarErro) throw atualizarErro;
+
+        // Marca todos os itens para inserção
+        itensParaInserir.forEach(item => {
+          const chave = `${item.data}|${item.tipo}|${item.categoria}`;
+          chavesParaInserir.add(chave);
+        });
+      } else if (!semanaId) {
         const { data: criada, error: criarErro } = await supabase
           .from('pvs_semanas')
           .insert({
@@ -1194,28 +1479,27 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
           idsParaDeletar.push(item.pvi_id);
         });
 
-        // Se há diferenças, pede confirmação
+        // Se há diferenças, pede confirmação via modal
         const totalDiferencas = itensModificados.length + itensNovos.length + itensRemovidos.length;
 
         if (totalDiferencas > 0) {
-          let mensagemConfirmacao = `Reimportação detectada! Diferenças encontradas:\n\n`;
-          mensagemConfirmacao += `• ${totalIguais} itens iguais (serão ignorados)\n`;
-          if (itensModificados.length > 0) {
-            mensagemConfirmacao += `• ${itensModificados.length} itens com valores alterados\n`;
-          }
-          if (itensNovos.length > 0) {
-            mensagemConfirmacao += `• ${itensNovos.length} itens novos\n`;
-          }
-          if (itensRemovidos.length > 0) {
-            mensagemConfirmacao += `• ${itensRemovidos.length} itens removidos\n`;
-          }
-          mensagemConfirmacao += `\nDeseja continuar com a atualização?`;
-
-          if (!window.confirm(mensagemConfirmacao)) {
-            setImportando(false);
-            setMensagem({ tipo: 'info', texto: 'Importação cancelada pelo usuário.' });
-            return;
-          }
+          // Mostra modal e aguarda confirmação
+          await new Promise<void>((resolve, reject) => {
+            setModalResumo({
+              iguais: totalIguais,
+              modificados: itensModificados.length,
+              novos: itensNovos.length,
+              removidos: itensRemovidos.length,
+              onConfirm: async () => {
+                setModalResumo(null);
+                resolve();
+              },
+              onCancel: () => {
+                setModalResumo(null);
+                reject(new Error('Importação cancelada pelo usuário'));
+              }
+            });
+          });
         }
 
         // Atualiza status da semana
@@ -1267,17 +1551,43 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
         if (inserirErro) throw inserirErro;
       }
 
-      setMensagem({ tipo: 'sucesso', texto: 'Previsão semanal importada com sucesso.' });
+      const mensagemSucesso = modoEdicao
+        ? 'Alterações salvas com sucesso.'
+        : modoInclusao
+        ? 'Novos itens incluídos com sucesso.'
+        : 'Previsão semanal importada com sucesso.';
+
+      setMensagem({ tipo: 'sucesso', texto: mensagemSucesso });
+
+      // Limpa modo de edição ou inclusão se estava ativo
+      if (modoEdicao) {
+        setModoEdicao(false);
+        setLinhas([]);
+      }
+      if (modoInclusao) {
+        setModoInclusao(false);
+        setLinhas([]);
+      }
+
       await carregarPrevisaoExistente(semanaSelecionada, usuario.usr_id);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao importar previsão semanal:', error);
-      setMensagem({
-        tipo: 'erro',
-        texto: traduzirErroSupabase(
-          error,
-          'Falha ao importar a previsão semanal. Verifique os dados e tente novamente.',
-        ),
-      });
+
+      // Se foi cancelamento pelo usuário, mostra mensagem diferente
+      if (error.message === 'Importação cancelada pelo usuário') {
+        setMensagem({
+          tipo: 'info',
+          texto: 'Importação cancelada pelo usuário.',
+        });
+      } else {
+        setMensagem({
+          tipo: 'erro',
+          texto: traduzirErroSupabase(
+            error,
+            'Falha ao importar a previsão semanal. Verifique os dados e tente novamente.',
+          ),
+        });
+      }
     } finally {
       setImportando(false);
     }
@@ -1334,41 +1644,43 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
               </label>
 
               <div className="flex flex-col gap-3">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-                  <label className="flex flex-col text-sm font-medium text-gray-700">
-                    Arquivo Excel
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls"
-                      className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      ref={arquivoInputRef}
-                      onChange={handleArquivoChange}
-                      disabled={processandoArquivo || !edicaoPermitida}
-                    />
-                  </label>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={handleCancelarArquivo}
-                    disabled={!arquivoNome || processandoArquivo}
-                  >
-                    Cancelar seleção
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="primary"
-                    onClick={handleImportar}
-                    disabled={
-                      !edicaoPermitida || importando || linhas.length === 0 || processandoArquivo
-                    }
-                    loading={importando}
-                  >
-                    Importar previsão
-                  </Button>
-                </div>
+                {!modoEdicao && !modoInclusao && (
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+                    <label className="flex flex-col text-sm font-medium text-gray-700">
+                      Arquivo Excel
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls"
+                        className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        ref={arquivoInputRef}
+                        onChange={handleArquivoChange}
+                        disabled={processandoArquivo || !edicaoPermitida}
+                      />
+                    </label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={handleCancelarArquivo}
+                      disabled={!arquivoNome || processandoArquivo}
+                    >
+                      Cancelar seleção
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="primary"
+                      onClick={handleImportar}
+                      disabled={
+                        !edicaoPermitida || importando || linhas.length === 0 || processandoArquivo
+                      }
+                      loading={importando}
+                    >
+                      Importar previsão
+                    </Button>
+                  </div>
+                )}
 
                 {/* Botões de edição e inclusão */}
-                {previsaoExistente && (
+                {previsaoExistente && !modoEdicao && !modoInclusao && (
                   <div className="flex flex-col gap-2 rounded-md border border-primary-200 bg-primary-50/30 p-3">
                     <p className="text-xs font-medium text-primary-800">
                       Ações sobre a previsão existente:
@@ -1378,7 +1690,7 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
                         type="button"
                         variant="secondary"
                         size="sm"
-                        onClick={() => alert('Funcionalidade de edição será implementada em breve.\n\nPermitirá editar valores já lançados na previsão semanal.')}
+                        onClick={handleIniciarEdicao}
                         disabled={!edicaoPermitida}
                       >
                         Editar lançamentos
@@ -1387,15 +1699,90 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
                         type="button"
                         variant="secondary"
                         size="sm"
-                        onClick={() => alert('Funcionalidade de inclusão será implementada em breve.\n\nPermitirá adicionar novas áreas/categorias não previstas.\n\nLimitação: Apenas 1 área por semana pode ser cadastrada.')}
+                        onClick={handleIniciarInclusao}
                         disabled={!edicaoPermitida}
                       >
-                        Incluir área sem previsão
+                        Incluir categorias adicionais
                       </Button>
                     </div>
-                    <p className="text-xs text-gray-600">
-                      <strong>Importante:</strong> Apenas 1 área pode ser cadastrada por semana.
+                  </div>
+                )}
+
+                {/* Modo de edição ativo */}
+                {modoEdicao && (
+                  <div className="flex flex-col gap-2 rounded-md border border-warning-200 bg-warning-50/30 p-3">
+                    <p className="text-xs font-medium text-warning-800">
+                      Modo de edição ativo
                     </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleCancelarEdicao}
+                        disabled={importando}
+                      >
+                        Cancelar edição
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="sm"
+                        onClick={handleImportar}
+                        disabled={importando || linhas.length === 0}
+                        loading={importando}
+                      >
+                        Salvar alterações
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Modo de inclusão ativo */}
+                {modoInclusao && (
+                  <div className="flex flex-col gap-2 rounded-md border border-primary-200 bg-primary-50/30 p-3">
+                    <p className="text-xs font-medium text-primary-800">
+                      Modo de inclusão ativo - Adicione novas categorias
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleCancelarInclusao}
+                        disabled={importando}
+                      >
+                        Cancelar inclusão
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleAdicionarLinha('receita')}
+                        disabled={importando}
+                      >
+                        + Receita
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleAdicionarLinha('gasto')}
+                        disabled={importando}
+                      >
+                        + Gasto
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="sm"
+                        onClick={handleImportar}
+                        disabled={importando || linhas.length === 0}
+                        loading={importando}
+                      >
+                        Salvar inclusão
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1409,6 +1796,27 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
 
             {arquivoNome && (
               <p className="text-xs text-gray-500">Arquivo selecionado: {arquivoNome}</p>
+            )}
+
+            {!modoEdicao && !modoInclusao && (
+              <div className="rounded-md border border-gray-200 bg-gray-50 px-4 py-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-700">Precisa de um template?</p>
+                    <p className="mt-1 text-xs text-gray-600">
+                      Baixe um modelo de planilha pré-formatado com as datas da semana selecionada e exemplos de lançamentos.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleBaixarTemplate}
+                  >
+                    Baixar template
+                  </Button>
+                </div>
+              </div>
             )}
 
             {mensagem && (
@@ -1434,7 +1842,7 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
           </Card>
         )}
         {linhas.length > 0 && (
-          <Card title="Pré-visualização da importação">
+          <Card title={modoEdicao ? "Edição de lançamentos" : modoInclusao ? "Inclusão de categorias" : "Pré-visualização da importação"}>
             <div className="space-y-4">
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200 text-sm">
@@ -1457,6 +1865,11 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
                           {formatarDataPt(data)}
                         </th>
                       ))}
+                      {modoInclusao && (
+                        <th className="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Ações
+                        </th>
+                      )}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 bg-white/80">
@@ -1477,7 +1890,17 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
                             </td>
                             <td className="px-3 py-2 align-top">
                               <div className="flex flex-col">
-                                <span className="font-medium text-gray-900">{linha.titulo}</span>
+                                {modoInclusao ? (
+                                  <input
+                                    type="text"
+                                    className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                    placeholder="Nome da categoria..."
+                                    value={linha.titulo}
+                                    onChange={(e) => handleTituloChange(linha.id, e.target.value)}
+                                  />
+                                ) : (
+                                  <span className="font-medium text-gray-900">{linha.titulo}</span>
+                                )}
                                 <span className="text-xs text-gray-400 uppercase">{linha.tipo}</span>
                               </div>
                             </td>
@@ -1560,10 +1983,22 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
                                 />
                               </td>
                             ))}
+                            {modoInclusao && (
+                              <td className="px-3 py-2 align-top text-center">
+                                <button
+                                  type="button"
+                                  className="rounded-md px-2 py-1 text-xs text-error-600 hover:bg-error-50 hover:text-error-700 focus:outline-none focus:ring-2 focus:ring-error-500"
+                                  onClick={() => handleRemoverLinha(linha.id)}
+                                  title="Remover linha"
+                                >
+                                  ✕
+                                </button>
+                              </td>
+                            )}
                           </tr>
                           {linha.erros.length > 0 && (
                             <tr>
-                              <td colSpan={3 + datasTabela.length} className="bg-error-50 px-3 py-2 text-xs text-error-700">
+                              <td colSpan={3 + datasTabela.length + (modoInclusao ? 1 : 0)} className="bg-error-50 px-3 py-2 text-xs text-error-700">
                                 {linha.erros.join(' ')}
                               </td>
                             </tr>
@@ -1662,6 +2097,85 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
           )}
         </Card>
       </div>
+
+      {/* Modal de confirmação de reimportação */}
+      {modalResumo && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-lg border border-gray-200 bg-white shadow-xl">
+            <div className="border-b border-gray-200 px-6 py-4">
+              <h3 className="text-lg font-semibold text-gray-900">Reimportação Detectada</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                A previsão desta semana já possui dados registrados. Revise as alterações abaixo:
+              </p>
+            </div>
+
+            <div className="space-y-3 px-6 py-4">
+              <div className="flex items-center justify-between rounded-md border border-success-200 bg-success-50/40 px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-success-700">✓</span>
+                  <span className="text-sm font-medium text-success-900">Itens iguais</span>
+                </div>
+                <span className="text-lg font-bold text-success-700">{modalResumo.iguais}</span>
+              </div>
+
+              {modalResumo.modificados > 0 && (
+                <div className="flex items-center justify-between rounded-md border border-warning-200 bg-warning-50/40 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-warning-700">⚠</span>
+                    <span className="text-sm font-medium text-warning-900">Itens modificados</span>
+                  </div>
+                  <span className="text-lg font-bold text-warning-700">{modalResumo.modificados}</span>
+                </div>
+              )}
+
+              {modalResumo.novos > 0 && (
+                <div className="flex items-center justify-between rounded-md border border-primary-200 bg-primary-50/40 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-primary-700">+</span>
+                    <span className="text-sm font-medium text-primary-900">Itens novos</span>
+                  </div>
+                  <span className="text-lg font-bold text-primary-700">{modalResumo.novos}</span>
+                </div>
+              )}
+
+              {modalResumo.removidos > 0 && (
+                <div className="flex items-center justify-between rounded-md border border-error-200 bg-error-50/40 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-error-700">−</span>
+                    <span className="text-sm font-medium text-error-900">Itens removidos</span>
+                  </div>
+                  <span className="text-lg font-bold text-error-700">{modalResumo.removidos}</span>
+                </div>
+              )}
+
+              <div className="mt-4 rounded-md border border-gray-200 bg-gray-50 px-4 py-3">
+                <p className="text-xs text-gray-600">
+                  <strong>Atenção:</strong> Itens iguais serão ignorados. Itens modificados e removidos serão excluídos do banco e substituídos pelos novos valores. Itens novos serão inseridos.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 border-t border-gray-200 px-6 py-4">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={modalResumo.onCancel}
+                className="flex-1"
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={modalResumo.onConfirm}
+                className="flex-1"
+              >
+                Confirmar Importação
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };
