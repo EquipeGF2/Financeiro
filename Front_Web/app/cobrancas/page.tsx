@@ -13,6 +13,65 @@ import {
 import { getUserSession } from '@/lib/userSession';
 import { traduzirErroSupabase } from '@/lib/supabaseErrors';
 
+type Mensagem = { tipo: 'sucesso' | 'erro' | 'info'; texto: string };
+
+type CategoriaReceita = 'depositos' | 'titulos' | 'outras';
+
+type TipoOption = {
+  id: number;
+  nome: string;
+  codigo: string;
+  categoria: CategoriaReceita;
+};
+
+type ContaOption = {
+  id: number;
+  nome: string;
+  bancoId: number | null;
+  bancoNome: string | null;
+};
+
+type BancoAgrupado = {
+  id: number | null;
+  nome: string;
+  contas: ContaOption[];
+};
+
+type FormularioValores = Record<number, Record<number, string>>;
+
+type LancamentoExistente = {
+  id: number;
+  contaId: number;
+  tipoId: number;
+  valor: number;
+  bancoId: number | null;
+};
+
+type CobrancaHistorico = {
+  id: number;
+  conta: string;
+  tipo: string;
+  banco: string;
+  data: string;
+  valor: number;
+};
+
+type ResumoBanco = { bancoId: number | null; bancoNome: string; total: number };
+
+type ResumoTipo = {
+  tipoId: number;
+  nome: string;
+  codigo: string;
+  categoria: CategoriaReceita;
+  total: number;
+};
+
+type CategoriaConfig = {
+  chave: CategoriaReceita;
+  titulo: string;
+  descricao: string;
+};
+
 const toISODate = (date: Date): string => date.toISOString().split('T')[0];
 
 const calcularRetroativo = (dias: number): string => {
@@ -174,8 +233,67 @@ export default function LancamentoCobrancaPage() {
     return mapa;
   }, [tipos]);
 
-  const valoresSalvosPorBanco = useMemo(() => {
-    const mapa: Record<number, Record<number, number>> = {};
+    return Array.from(mapa.entries())
+      .filter(([, total]) => total > 0)
+      .map(([bancoId, total]) => {
+        const contaExemplo = contas.find((conta) => (conta.bancoId ?? null) === bancoId);
+        return {
+          bancoId,
+          bancoNome: contaExemplo?.bancoNome ?? 'Sem banco vinculado',
+          total,
+        } satisfies ResumoBanco;
+      })
+      .sort((a, b) => a.bancoNome.localeCompare(b.bancoNome, 'pt-BR', { sensitivity: 'base' }));
+  }, [contas, formulario, tipos]);
+
+  const categoriasResumo = useMemo(() => {
+    return [...CATEGORIAS_CONFIG].sort((a, b) => {
+      if (a.chave === 'titulos' && b.chave !== 'titulos') return 1;
+      if (b.chave === 'titulos' && a.chave !== 'titulos') return -1;
+      return 0;
+    });
+  }, []);
+
+  const resumoTiposPorCategoria = useMemo<Record<CategoriaReceita, ResumoTipo[]>>(() => {
+    const base: Record<CategoriaReceita, ResumoTipo[]> = {
+      depositos: [],
+      titulos: [],
+      outras: [],
+    };
+
+    tipos.forEach((tipo) => {
+      let total = 0;
+
+      contas.forEach((conta) => {
+        const valoresConta = formulario[conta.id] ?? {};
+        const valorCalculado = avaliarValor(valoresConta[tipo.id] ?? '');
+        if (valorCalculado && Number.isFinite(valorCalculado)) {
+          total += valorCalculado;
+        }
+      });
+
+      base[tipo.categoria].push({
+        tipoId: tipo.id,
+        nome: tipo.nome,
+        codigo: tipo.codigo,
+        categoria: tipo.categoria,
+        total: Math.round(total * 100) / 100,
+      });
+    });
+
+    (Object.keys(base) as CategoriaReceita[]).forEach((categoria) => {
+      base[categoria] = base[categoria].sort((a, b) => {
+        const codigoDiff = a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true, sensitivity: 'base' });
+        if (codigoDiff !== 0) return codigoDiff;
+        return a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' });
+      });
+    });
+
+    return base;
+  }, [tipos, contas, formulario]);
+
+  const resumoSalvoPorBanco = useMemo<ResumoBanco[]>(() => {
+    const mapa = new Map<number | null, number>();
 
     Object.values(lancamentosExistentes).forEach((registro) => {
       const conta = contasMap.get(registro.contaId);
@@ -612,10 +730,154 @@ export default function LancamentoCobrancaPage() {
               </div>
             )}
 
-            <div className="space-y-3">
-              <h3 className="text-base font-semibold text-gray-900">Resumo por banco</h3>
-              {bancos.length === 0 ? (
-                <p className="text-sm text-gray-500">Cadastre bancos para visualizar os totais por instituição.</p>
+            {contas.length > 0 && tipos.length > 0 && (
+              <div className="grid gap-4 lg:grid-cols-3">
+                <div className="rounded-lg border border-gray-200 bg-white shadow-sm">
+                  <div className="border-b border-gray-200 px-4 py-3">
+                    <h3 className="text-base font-semibold text-gray-900">Resumo por banco</h3>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Totais informados no formulário agrupados pelos bancos vinculados.
+                    </p>
+                  </div>
+                  <div className="px-4 py-3">
+                    {resumoFormularioPorBanco.length === 0 ? (
+                      <p className="text-sm text-gray-500">
+                        Nenhum valor informado para os bancos cadastrados.
+                      </p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200 text-sm">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-3 py-2 text-left font-semibold text-gray-600">Banco</th>
+                              <th className="px-3 py-2 text-right font-semibold text-gray-600">
+                                Valor informado
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100 bg-white">
+                            {resumoFormularioPorBanco.map((resumo) => (
+                              <tr key={`form-resumo-${resumo.bancoId ?? 'sem-banco'}`}>
+                                <td className="px-3 py-2 text-gray-700">{resumo.bancoNome}</td>
+                                <td className="px-3 py-2 text-right font-medium text-gray-900">
+                                  {formatCurrency(resumo.total)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot className="bg-gray-50">
+                            <tr>
+                              <th className="px-3 py-2 text-left font-semibold text-gray-700">Total</th>
+                              <th className="px-3 py-2 text-right font-semibold text-gray-900">
+                                {formatCurrency(totalFormulario)}
+                              </th>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {categoriasResumo.map((categoria) => {
+                  const linhas = resumoTiposPorCategoria[categoria.chave];
+                  const totalCategoria = totaisPorCategoria[categoria.chave];
+                  const classes = [
+                    'rounded-lg border border-gray-200 bg-white shadow-sm',
+                    categoria.chave === 'titulos' ? 'lg:col-span-3' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ');
+
+                  return (
+                    <div key={`resumo-${categoria.chave}`} className={classes}>
+                      <div className="border-b border-gray-200 px-4 py-3">
+                        <h3 className="text-base font-semibold text-gray-900">{categoria.titulo}</h3>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Dados da tabela de tipos de receita vinculada à categoria selecionada.
+                        </p>
+                      </div>
+                      <div className="px-4 py-3">
+                        {linhas.length === 0 ? (
+                          <p className="text-sm text-gray-500">
+                            Nenhum tipo de receita foi configurado para esta categoria.
+                          </p>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="min-w-full divide-y divide-gray-200 text-sm">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th className="px-3 py-2 text-left font-semibold text-gray-600">
+                                    Código / Tipo
+                                  </th>
+                                  <th className="px-3 py-2 text-right font-semibold text-gray-600">Valor</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100 bg-white">
+                                {linhas.map((linha) => (
+                                  <tr key={linha.tipoId}>
+                                    <td className="px-3 py-2 text-gray-700">
+                                      <span className="font-medium text-gray-800">{linha.codigo}</span>
+                                      <span className="ml-2 text-gray-500">{linha.nome}</span>
+                                    </td>
+                                    <td className="px-3 py-2 text-right font-medium text-gray-900">
+                                      {formatCurrency(linha.total)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                              <tfoot className="bg-gray-50">
+                                <tr>
+                                  <th className="px-3 py-2 text-left font-semibold text-gray-700">Total</th>
+                                  <th className="px-3 py-2 text-right font-semibold text-gray-900">
+                                    {formatCurrency(totalCategoria)}
+                                  </th>
+                                </tr>
+                              </tfoot>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <form className="space-y-6" onSubmit={handleSalvarLancamentos}>
+              <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(220px,240px)] md:items-end">
+                <label className="text-sm font-medium text-gray-700">
+                  Data dos lançamentos
+                  <input
+                    type="date"
+                    className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    min={limiteRetroativo}
+                    max={hojeIso}
+                    value={dataReferencia}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (!value) return;
+                      setDataReferencia(value);
+                      setMensagem(null);
+                    }}
+                  />
+                </label>
+
+                {!podeEditar && (
+                  <div className="rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-800">
+                    Edição disponível apenas para os últimos 7 dias úteis. Ajuste a data para atualizar os valores.
+                  </div>
+                )}
+              </div>
+
+              {carregandoLancamentos ? (
+                <div className="py-12">
+                  <Loading text="Carregando lançamentos para a data selecionada..." />
+                </div>
+              ) : contas.length === 0 || tipos.length === 0 ? (
+                <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
+                  Cadastre contas de receita e tipos de receita para habilitar os lançamentos de cobrança.
+                </div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200 text-sm">
