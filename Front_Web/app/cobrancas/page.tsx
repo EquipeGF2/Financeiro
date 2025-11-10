@@ -167,23 +167,20 @@ const gerarMapaTextoInicial = (
 ): ValoresTextoPorBanco => {
   const mapa: ValoresTextoPorBanco = {};
 
-  contasLista.forEach((conta) => {
-    if (conta.bancoId === null || conta.bancoId === undefined) {
-      return;
+  // Itera sobre os registros existentes para popular o mapa por banco
+  Object.values(registros).forEach((registro) => {
+    const bancoId = registro.bancoId;
+
+    if (!mapa[bancoId]) {
+      mapa[bancoId] = {};
     }
 
-    if (!mapa[conta.bancoId]) {
-      mapa[conta.bancoId] = {};
+    if (!mapa[bancoId][registro.contaId]) {
+      mapa[bancoId][registro.contaId] = {};
     }
 
-    const valoresConta: ValoresTextoPorTipo = {};
-      tiposLista.forEach((tipo) => {
-        const chave = gerarChaveLancamento(conta.bancoId!, conta.id, tipo.id);
-        const registro = registros[chave];
-      valoresConta[tipo.id] = registro && registro.valor > 0 ? formatarValorParaInput(registro.valor) : '';
-    });
-
-    mapa[conta.bancoId][conta.id] = valoresConta;
+    mapa[bancoId][registro.contaId][registro.tipoId] =
+      registro.valor > 0 ? formatarValorParaInput(registro.valor) : '';
   });
 
   return mapa;
@@ -259,20 +256,7 @@ export default function LancamentoCobrancaPage() {
     return mapa;
   }, [tipos]);
 
-    const contasPorBanco = useMemo(() => {
-      const mapa = new Map<number, ContaOption[]>();
-      contas.forEach((conta) => {
-        if (conta.bancoId === null || conta.bancoId === undefined) {
-          return;
-        }
-        const listaAtual = mapa.get(conta.bancoId) ?? [];
-        listaAtual.push(conta);
-        mapa.set(conta.bancoId, listaAtual);
-      });
-      return mapa;
-    }, [contas]);
-
-    const tiposOrdenados = useMemo(() => {
+  const tiposOrdenados = useMemo(() => {
     const filtrados = tipos.filter((tipo) => {
       const codigoNormalizado = (tipo.codigo ?? '').replace(/[^0-9]/g, '');
       if (!codigoNormalizado) {
@@ -296,21 +280,21 @@ export default function LancamentoCobrancaPage() {
     const base: ValoresNumericosPorBanco = {};
 
     Object.values(lancamentosExistentes).forEach((registro) => {
-      const conta = contasMap.get(registro.contaId);
-      const bancoId = conta?.bancoId ?? null;
-      const chaveBanco = bancoId ?? -1;
+      const bancoId = registro.bancoId;
 
-      if (!base[chaveBanco]) {
-        base[chaveBanco] = {};
+      if (!base[bancoId]) {
+        base[bancoId] = {};
       }
 
-      const mapaConta = base[chaveBanco][conta?.id ?? registro.contaId] ?? {};
-      mapaConta[registro.tipoId] = arredondar(registro.valor);
-      base[chaveBanco][conta?.id ?? registro.contaId] = mapaConta;
+      if (!base[bancoId][registro.contaId]) {
+        base[bancoId][registro.contaId] = {};
+      }
+
+      base[bancoId][registro.contaId][registro.tipoId] = arredondar(registro.valor);
     });
 
     return base;
-  }, [contasMap, lancamentosExistentes]);
+  }, [lancamentosExistentes]);
 
   const resumoFormularioPorBanco = useMemo<ResumoBanco[]>(() => {
     const linhas: ResumoBanco[] = [];
@@ -686,24 +670,10 @@ export default function LancamentoCobrancaPage() {
       return;
     }
 
-    const contasBanco = contasPorBanco.get(bancoSelecionadoId) ?? [];
-
-    if (contasBanco.length === 0) {
+    if (contasRelevantes.length === 0) {
       setMensagem({
         tipo: 'erro',
-        texto: 'Associe contas de receita ao banco selecionado antes de registrar as cobranças.',
-      });
-      return;
-    }
-
-    const codigosObrigatorios = ['200', '201'];
-    const codigosDisponiveis = new Set(contasBanco.map((conta) => normalizarCodigoConta(conta.codigo)));
-    const faltantes = codigosObrigatorios.filter((codigo) => !codigosDisponiveis.has(codigo));
-
-    if (faltantes.length > 0) {
-      setMensagem({
-        tipo: 'erro',
-        texto: `Associe as contas de receita ${faltantes.join(' e ')} ao banco selecionado antes de registrar as cobranças.`,
+        texto: 'Cadastre as contas de receita 200 e 201 antes de registrar as cobranças.',
       });
       return;
     }
@@ -719,6 +689,7 @@ export default function LancamentoCobrancaPage() {
     }
     const registrosParaUpsert: Array<{
       cob_id?: number;
+      cob_ban_id: number;
       cob_ctr_id: number;
       cob_tpr_id: number;
       cob_usr_id: number;
@@ -727,7 +698,7 @@ export default function LancamentoCobrancaPage() {
     }> = [];
     const idsParaExcluir: number[] = [];
 
-    contasBanco.forEach((conta) => {
+    contasRelevantes.forEach((conta) => {
       const valoresConta = valoresBanco[conta.id] ?? {};
 
         tiposOrdenados.forEach((tipo) => {
@@ -740,6 +711,7 @@ export default function LancamentoCobrancaPage() {
           if (!registroExistente || Math.abs(valorCalculado - registroExistente.valor) > 0.009) {
             registrosParaUpsert.push({
               cob_id: registroExistente?.id,
+              cob_ban_id: bancoSelecionadoId!,
               cob_ctr_id: conta.id,
               cob_tpr_id: tipo.id,
               cob_usr_id: usuarioId,
@@ -823,12 +795,10 @@ export default function LancamentoCobrancaPage() {
 
   let valoresBancoSelecionado: ValoresTextoPorConta = {};
   let valoresSalvosBancoSelecionado: ValoresNumericosPorConta = {};
-  let contasBancoSelecionado: ContaOption[] = [];
 
   if (bancoSelecionadoId !== null) {
     valoresBancoSelecionado = valoresPorBanco[bancoSelecionadoId] ?? {};
     valoresSalvosBancoSelecionado = valoresSalvosPorBanco[bancoSelecionadoId] ?? {};
-    contasBancoSelecionado = contasPorBanco.get(bancoSelecionadoId) ?? [];
   }
 
   return (
@@ -1027,36 +997,13 @@ export default function LancamentoCobrancaPage() {
               <div className="rounded-md border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-center text-sm text-gray-500">
                 Escolha um banco para visualizar as contas de lançamento disponíveis.
               </div>
-            ) : contasBancoSelecionado.length === 0 ? (
+            ) : contasRelevantes.length === 0 ? (
               <div className="rounded-md border border-warning-200 bg-warning-50 px-4 py-6 text-center text-sm text-warning-800">
-                Nenhuma conta de receita foi vinculada ao banco selecionado. Configure as contas 200 e 201 para continuar.
+                Cadastre as contas de receita 200 e 201 para habilitar os lançamentos de cobrança.
               </div>
-            ) : (() => {
-                const contasFiltradas = contasBancoSelecionado.filter((conta) => {
-                  const codigo = normalizarCodigoConta(conta.codigo);
-                  return codigo === '200' || codigo === '201';
-                });
-
-                if (contasFiltradas.length === 0) {
-                  return (
-                    <div className="rounded-md border border-warning-200 bg-warning-50 px-4 py-6 text-center text-sm text-warning-800">
-                      O banco selecionado não possui as contas de receita 200 e 201 vinculadas. Configure estas contas para continuar.
-                    </div>
-                  );
-                }
-
-                return (
-                  <div className="space-y-6">
-                    {contasFiltradas
-                      .slice()
-                      .sort((a, b) => {
-                        const diffCodigo = a.codigo.localeCompare(b.codigo, 'pt-BR', { numeric: true, sensitivity: 'base' });
-                        if (diffCodigo !== 0) {
-                          return diffCodigo;
-                        }
-                        return a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' });
-                      })
-                      .map((conta) => {
+            ) : (
+              <div className="space-y-6">
+                {contasRelevantes.map((conta) => {
                     const descricaoConta = obterDescricaoConta(conta);
                     const valoresContaSelecionada = valoresBancoSelecionado[conta.id] ?? {};
                     const totalConta = Object.values(valoresContaSelecionada).reduce((acc, valorTexto) => {
@@ -1186,9 +1133,8 @@ export default function LancamentoCobrancaPage() {
                       </div>
                     );
                   })}
-                  </div>
-                );
-              })()}
+              </div>
+            )}
 
             <div className="flex justify-end">
               <Button
