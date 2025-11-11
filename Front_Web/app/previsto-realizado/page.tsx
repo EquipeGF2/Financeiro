@@ -11,6 +11,8 @@ interface PrevisaoItem {
   tipo: 'receita' | 'gasto';
   categoria: string;
   valor: number;
+  areaId: number | null;
+  area_nome: string | null;
 }
 
 interface SaldoRealizado {
@@ -33,12 +35,20 @@ interface ComparativoData {
   variacao_saldo: number;
 }
 
+interface AreaOption {
+  id: number;
+  nome: string;
+}
+
 export default function PrevistoRealizadoPage() {
   const [carregando, setCarregando] = useState(true);
   const [previsoes, setPrevisoes] = useState<PrevisaoItem[]>([]);
   const [saldos, setSaldos] = useState<SaldoRealizado[]>([]);
   const [periodoInicio, setPeriodoInicio] = useState('');
   const [periodoFim, setPeriodoFim] = useState('');
+  const [areas, setAreas] = useState<AreaOption[]>([]);
+  const [areaFiltro, setAreaFiltro] = useState<number | null>(null);
+  const [tipoFiltro, setTipoFiltro] = useState<'todos' | 'receita' | 'gasto'>('todos');
 
   useEffect(() => {
     // Define período padrão: semana atual
@@ -54,6 +64,30 @@ export default function PrevistoRealizadoPage() {
   }, []);
 
   useEffect(() => {
+    const carregarAreas = async () => {
+      try {
+        const supabase = getSupabaseClient();
+        const { data, error } = await supabase
+          .from('are_areas')
+          .select('are_id, are_nome')
+          .eq('are_ativo', true)
+          .order('are_nome');
+
+        if (error) throw error;
+
+        setAreas((data || []).map((a: any) => ({
+          id: a.are_id,
+          nome: a.are_nome
+        })));
+      } catch (erro) {
+        console.error('Erro ao carregar áreas:', erro);
+      }
+    };
+
+    carregarAreas();
+  }, []);
+
+  useEffect(() => {
     if (!periodoInicio || !periodoFim) return;
 
     const carregarDados = async () => {
@@ -64,12 +98,32 @@ export default function PrevistoRealizadoPage() {
         // Buscar previsões do período
         const { data: previsoesData, error: erroPrevisoes } = await supabase
           .from('fpre_itens')
-          .select('data, tipo, categoria, valor')
-          .gte('data', periodoInicio)
-          .lte('data', periodoFim)
-          .order('data');
+          .select(`
+            fpre_data,
+            fpre_tipo,
+            fpre_categoria,
+            fpre_valor,
+            fpre_are_id,
+            are_areas!fpre_are_id (are_nome)
+          `)
+          .gte('fpre_data', periodoInicio)
+          .lte('fpre_data', periodoFim)
+          .order('fpre_data');
 
         if (erroPrevisoes) throw erroPrevisoes;
+
+        // Transformar dados
+        const previsoesFormatadas = (previsoesData || []).map((item: any) => {
+          const area = Array.isArray(item.are_areas) ? item.are_areas[0] : item.are_areas;
+          return {
+            data: item.fpre_data,
+            tipo: item.fpre_tipo,
+            categoria: item.fpre_categoria,
+            valor: item.fpre_valor,
+            areaId: item.fpre_are_id,
+            area_nome: area?.are_nome || null
+          };
+        });
 
         // Buscar saldos realizados
         const { data: saldosData, error: erroSaldos } = await supabase
@@ -80,7 +134,7 @@ export default function PrevistoRealizadoPage() {
 
         if (erroSaldos) throw erroSaldos;
 
-        setPrevisoes(previsoesData || []);
+        setPrevisoes(previsoesFormatadas);
         setSaldos(saldosData || []);
       } catch (erro) {
         console.error('Erro ao carregar dados:', erro);
@@ -92,15 +146,29 @@ export default function PrevistoRealizadoPage() {
     carregarDados();
   }, [periodoInicio, periodoFim]);
 
+  const previsoesFiltradas = useMemo(() => {
+    let resultado = previsoes;
+
+    if (areaFiltro !== null) {
+      resultado = resultado.filter(p => p.areaId === areaFiltro);
+    }
+
+    if (tipoFiltro !== 'todos') {
+      resultado = resultado.filter(p => p.tipo === tipoFiltro);
+    }
+
+    return resultado;
+  }, [previsoes, areaFiltro, tipoFiltro]);
+
   const dadosComparativos = useMemo((): ComparativoData[] => {
     const todasDatas = new Set<string>();
-    previsoes.forEach(p => todasDatas.add(p.data));
+    previsoesFiltradas.forEach(p => todasDatas.add(p.data));
     saldos.forEach(s => todasDatas.add(s.data));
 
     const datasOrdenadas = Array.from(todasDatas).sort();
 
     return datasOrdenadas.map(data => {
-      const previsoesData = previsoes.filter(p => p.data === data);
+      const previsoesData = previsoesFiltradas.filter(p => p.data === data);
       const saldoData = saldos.find(s => s.data === data);
 
       const previsto_receitas = previsoesData
@@ -135,7 +203,7 @@ export default function PrevistoRealizadoPage() {
         variacao_saldo: calcVariacao(saldo_realizado, saldo_previsto)
       };
     });
-  }, [previsoes, saldos]);
+  }, [previsoesFiltradas, saldos]);
 
   const totais = useMemo(() => {
     return dadosComparativos.reduce(
@@ -158,6 +226,22 @@ export default function PrevistoRealizadoPage() {
     );
   }, [dadosComparativos]);
 
+  const dadosGraficoReceitas = useMemo(() => {
+    return dadosComparativos.map(d => ({
+      data: formatarData(d.data),
+      previsto: d.previsto_receitas,
+      realizado: d.realizado_receitas
+    }));
+  }, [dadosComparativos]);
+
+  const dadosGraficoDespesas = useMemo(() => {
+    return dadosComparativos.map(d => ({
+      data: formatarData(d.data),
+      previsto: d.previsto_despesas,
+      realizado: d.realizado_despesas
+    }));
+  }, [dadosComparativos]);
+
   const formatarData = (data: string) => {
     const [ano, mes, dia] = data.split('-');
     return `${dia}/${mes}`;
@@ -173,6 +257,12 @@ export default function PrevistoRealizadoPage() {
     );
   };
 
+  const maxValorGrafico = useMemo(() => {
+    const maxReceitas = Math.max(...dadosGraficoReceitas.flatMap(d => [d.previsto, d.realizado]));
+    const maxDespesas = Math.max(...dadosGraficoDespesas.flatMap(d => [d.previsto, d.realizado]));
+    return Math.max(maxReceitas, maxDespesas);
+  }, [dadosGraficoReceitas, dadosGraficoDespesas]);
+
   return (
     <>
       <Header
@@ -181,9 +271,9 @@ export default function PrevistoRealizadoPage() {
       />
 
       <div className="page-content space-y-6">
-        {/* Filtros de período */}
-        <Card title="Período de Análise">
-          <div className="flex flex-wrap gap-4 items-end">
+        {/* Filtros de período e área */}
+        <Card title="Filtros de Análise">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="text-sm font-medium text-gray-700 block mb-1">
                 Data Início
@@ -192,7 +282,7 @@ export default function PrevistoRealizadoPage() {
                 type="date"
                 value={periodoInicio}
                 onChange={(e) => setPeriodoInicio(e.target.value)}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
               />
             </div>
             <div>
@@ -203,8 +293,37 @@ export default function PrevistoRealizadoPage() {
                 type="date"
                 value={periodoFim}
                 onChange={(e) => setPeriodoFim(e.target.value)}
-                className="rounded-md border border-gray-300 px-3 py-2 text-sm"
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
               />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 block mb-1">
+                Área
+              </label>
+              <select
+                value={areaFiltro ?? ''}
+                onChange={(e) => setAreaFiltro(e.target.value ? Number(e.target.value) : null)}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              >
+                <option value="">Todas as áreas</option>
+                {areas.map(area => (
+                  <option key={area.id} value={area.id}>{area.nome}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 block mb-1">
+                Tipo
+              </label>
+              <select
+                value={tipoFiltro}
+                onChange={(e) => setTipoFiltro(e.target.value as 'todos' | 'receita' | 'gasto')}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              >
+                <option value="todos">Todos</option>
+                <option value="receita">Receitas</option>
+                <option value="gasto">Despesas</option>
+              </select>
             </div>
           </div>
         </Card>
@@ -305,6 +424,83 @@ export default function PrevistoRealizadoPage() {
               </Card>
             </div>
 
+            {/* Gráficos Comparativos */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Gráfico de Receitas */}
+              <Card title="Receitas - Previsto x Realizado">
+                <div className="space-y-4">
+                  <div className="flex gap-4 text-sm mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-blue-500 rounded"></div>
+                      <span>Previsto</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-success-500 rounded"></div>
+                      <span>Realizado</span>
+                    </div>
+                  </div>
+                  {dadosGraficoReceitas.map((item, idx) => (
+                    <div key={idx} className="space-y-1">
+                      <div className="flex justify-between text-xs text-gray-600">
+                        <span>{item.data}</span>
+                        <div className="flex gap-3">
+                          <span>P: {formatCurrency(item.previsto)}</span>
+                          <span>R: {formatCurrency(item.realizado)}</span>
+                        </div>
+                      </div>
+                      <div className="flex gap-1 h-6">
+                        <div
+                          className="bg-blue-500 rounded"
+                          style={{ width: `${(item.previsto / maxValorGrafico) * 100}%` }}
+                        ></div>
+                        <div
+                          className="bg-success-500 rounded"
+                          style={{ width: `${(item.realizado / maxValorGrafico) * 100}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+
+              {/* Gráfico de Despesas */}
+              <Card title="Despesas - Previsto x Realizado">
+                <div className="space-y-4">
+                  <div className="flex gap-4 text-sm mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-orange-500 rounded"></div>
+                      <span>Previsto</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-error-500 rounded"></div>
+                      <span>Realizado</span>
+                    </div>
+                  </div>
+                  {dadosGraficoDespesas.map((item, idx) => (
+                    <div key={idx} className="space-y-1">
+                      <div className="flex justify-between text-xs text-gray-600">
+                        <span>{item.data}</span>
+                        <div className="flex gap-3">
+                          <span>P: {formatCurrency(item.previsto)}</span>
+                          <span>R: {formatCurrency(item.realizado)}</span>
+                        </div>
+                      </div>
+                      <div className="flex gap-1 h-6">
+                        <div
+                          className="bg-orange-500 rounded"
+                          style={{ width: `${(item.previsto / maxValorGrafico) * 100}%` }}
+                        ></div>
+                        <div
+                          className="bg-error-500 rounded"
+                          style={{ width: `${(item.realizado / maxValorGrafico) * 100}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </div>
+
             {/* Tabela Comparativa */}
             <Card title="Comparativo Diário">
               <div className="overflow-x-auto">
@@ -336,44 +532,52 @@ export default function PrevistoRealizadoPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 bg-white">
-                    {dadosComparativos.map((item) => (
-                      <tr key={item.data} className="hover:bg-gray-50">
-                        <td className="px-3 py-2 text-gray-900 font-medium">
-                          {formatarData(item.data)}
-                        </td>
-                        <td className="px-3 py-2 text-right text-gray-600">
-                          {formatCurrency(item.previsto_receitas)}
-                        </td>
-                        <td className="px-3 py-2 text-right font-semibold text-success-700">
-                          {formatCurrency(item.realizado_receitas)}
-                        </td>
-                        <td className="px-3 py-2 text-center">
-                          {renderVariacao(item.variacao_receitas)}
-                        </td>
-                        <td className="px-3 py-2 text-right text-gray-600">
-                          {formatCurrency(item.previsto_despesas)}
-                        </td>
-                        <td className="px-3 py-2 text-right font-semibold text-error-700">
-                          {formatCurrency(item.realizado_despesas)}
-                        </td>
-                        <td className="px-3 py-2 text-center">
-                          {renderVariacao(item.variacao_despesas)}
-                        </td>
-                        <td className="px-3 py-2 text-right text-gray-600">
-                          {formatCurrency(item.saldo_previsto)}
-                        </td>
-                        <td
-                          className={`px-3 py-2 text-right font-semibold ${
-                            item.saldo_realizado >= 0 ? 'text-success-700' : 'text-error-700'
-                          }`}
-                        >
-                          {formatCurrency(item.saldo_realizado)}
-                        </td>
-                        <td className="px-3 py-2 text-center">
-                          {renderVariacao(item.variacao_saldo)}
+                    {dadosComparativos.length === 0 ? (
+                      <tr>
+                        <td colSpan={10} className="px-3 py-6 text-center text-gray-500">
+                          Nenhum dado encontrado para o período e filtros selecionados
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      dadosComparativos.map((item) => (
+                        <tr key={item.data} className="hover:bg-gray-50">
+                          <td className="px-3 py-2 text-gray-900 font-medium">
+                            {formatarData(item.data)}
+                          </td>
+                          <td className="px-3 py-2 text-right text-gray-600">
+                            {formatCurrency(item.previsto_receitas)}
+                          </td>
+                          <td className="px-3 py-2 text-right font-semibold text-success-700">
+                            {formatCurrency(item.realizado_receitas)}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            {renderVariacao(item.variacao_receitas)}
+                          </td>
+                          <td className="px-3 py-2 text-right text-gray-600">
+                            {formatCurrency(item.previsto_despesas)}
+                          </td>
+                          <td className="px-3 py-2 text-right font-semibold text-error-700">
+                            {formatCurrency(item.realizado_despesas)}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            {renderVariacao(item.variacao_despesas)}
+                          </td>
+                          <td className="px-3 py-2 text-right text-gray-600">
+                            {formatCurrency(item.saldo_previsto)}
+                          </td>
+                          <td
+                            className={`px-3 py-2 text-right font-semibold ${
+                              item.saldo_realizado >= 0 ? 'text-success-700' : 'text-error-700'
+                            }`}
+                          >
+                            {formatCurrency(item.saldo_realizado)}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            {renderVariacao(item.variacao_saldo)}
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
