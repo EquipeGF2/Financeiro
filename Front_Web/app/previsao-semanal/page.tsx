@@ -682,9 +682,46 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
             return toISODate(data);
           }
           if (typeof valor === 'string') {
-            const texto = valor.replace(/\s+/g, ' ').trim();
+            const texto = valor.replace(/\s+/g, ' ').trim().toLowerCase();
             if (!texto) return null;
-            const completo = texto.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
+
+            // Mapa de meses por extenso
+            const meses: Record<string, number> = {
+              'jan': 1, 'janeiro': 1,
+              'fev': 2, 'fevereiro': 2,
+              'mar': 3, 'março': 3, 'marco': 3,
+              'abr': 4, 'abril': 4,
+              'mai': 5, 'maio': 5,
+              'jun': 6, 'junho': 6,
+              'jul': 7, 'julho': 7,
+              'ago': 8, 'agosto': 8,
+              'set': 9, 'setembro': 9,
+              'out': 10, 'outubro': 10,
+              'nov': 11, 'novembro': 11,
+              'dez': 12, 'dezembro': 12
+            };
+
+            // Formato com mês por extenso: 17/nov/25, 17-nov-2025, 17.nov.25
+            const comMesExtenso = texto.match(/^(\d{1,2})[\/-.]([a-zç]+)[\/-.]?(\d{2,4})?$/i);
+            if (comMesExtenso) {
+              const dia = Number(comMesExtenso[1]);
+              const mesTexto = comMesExtenso[2].toLowerCase();
+              const mes = meses[mesTexto];
+              if (mes) {
+                let ano = comMesExtenso[3] ? Number(comMesExtenso[3]) : anoReferenciaSemana;
+                if (ano < 100) {
+                  ano += ano < 50 ? 2000 : 1900;
+                }
+                if (dia < 1 || dia > 31) {
+                  return null;
+                }
+                const data = new Date(Date.UTC(ano, mes - 1, dia));
+                return toISODate(data);
+              }
+            }
+
+            // Formato completo com separadores variados: 17/11/25, 17.11.2025, 17-11-25
+            const completo = texto.match(/^(\d{1,2})[\/-.](\d{1,2})[\/-.](\d{2,4})$/);
             if (completo) {
               const dia = Number(completo[1]);
               const mes = Number(completo[2]);
@@ -699,7 +736,8 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
               return toISODate(data);
             }
 
-            const semAno = texto.match(/^(\d{1,2})[\/-](\d{1,2})$/);
+            // Formato sem ano: 17/11, 17.11, 17-11
+            const semAno = texto.match(/^(\d{1,2})[\/-.](\d{1,2})$/);
             if (semAno) {
               const dia = Number(semAno[1]);
               const mes = Number(semAno[2]);
@@ -711,6 +749,7 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
               return toISODate(data);
             }
 
+            // Tentar parse padrão
             const parsed = new Date(texto);
             if (Number.isNaN(parsed.valueOf())) {
               return null;
@@ -841,7 +880,10 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
 
           if (tituloNormalizadoOriginal.startsWith('gasto')) {
             const nomeArea = tituloOriginal.replace(/^gastos?\s*[:\-]?/i, '').trim();
-            const area = mapaAreas.get(normalizarTexto(nomeArea));
+            const nomeAreaNormalizado = normalizarTexto(nomeArea);
+            // Aplica correções de título para encontrar a área correta
+            const nomeAreaCorrigido = ajustarTituloNormalizado(nomeAreaNormalizado);
+            const area = mapaAreas.get(nomeAreaCorrigido) || mapaAreas.get(nomeAreaNormalizado);
             const linha: LinhaImportada = {
               id: gerarUUID(),
               tipo: 'gasto',
@@ -1179,7 +1221,7 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
       const novaLinha: LinhaImportada = {
         id: gerarUUID(),
         tipo: 'gasto',
-        titulo: '',
+        titulo: 'Despesas',
         valores: datasSemanaSelecionada.map(data => criarDiaValor(data, 0)),
         selecionado: true,
         areaId: null,
@@ -1193,7 +1235,7 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
       const novaLinha: LinhaImportada = {
         id: gerarUUID(),
         tipo: 'receita',
-        titulo: '',
+        titulo: 'Receita',
         valores: datasSemanaSelecionada.map(data => criarDiaValor(data, 0)),
         selecionado: true,
         areaId: null,
@@ -1696,30 +1738,6 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
                 </select>
               </label>
 
-              {/* Botões principais sempre visíveis no topo */}
-              {previsaoExistente && !modoEdicao && !modoInclusao && (
-                <div className="mb-3 flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleIniciarEdicao}
-                    disabled={!edicaoPermitida}
-                  >
-                    Editar lançamentos
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleIniciarInclusao}
-                    disabled={!edicaoPermitida}
-                  >
-                    Incluir categorias adicionais
-                  </Button>
-                </div>
-              )}
-
               <div className="flex flex-col gap-3">
                 {!modoEdicao && !modoInclusao && (
                   <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -1954,11 +1972,6 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
                         <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-success-700">
                           Incluir
                         </th>
-                        {modoInclusao && (
-                          <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-success-700">
-                            Categoria
-                          </th>
-                        )}
                         <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-success-700">
                           Conta de Receita
                         </th>
@@ -1995,23 +2008,6 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
                                 onChange={(event) => handleToggleLinha(linha.id, event.target.checked)}
                               />
                             </td>
-                            {modoInclusao && (
-                              <td className="px-3 py-2 align-top">
-                                <input
-                                  type="text"
-                                  list={`categorias-${linha.id}`}
-                                  className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-success-500"
-                                  placeholder="Digite ou selecione uma categoria..."
-                                  value={linha.titulo}
-                                  onChange={(e) => handleTituloChange(linha.id, e.target.value)}
-                                />
-                                <datalist id={`categorias-${linha.id}`}>
-                                  {categoriasExistentes.filter(cat => !cat.toLowerCase().startsWith('gasto')).map(cat => (
-                                    <option key={cat} value={cat} />
-                                  ))}
-                                </datalist>
-                              </td>
-                            )}
                             <td className="px-3 py-2 align-top">
                               {linha.tipo === 'saldo_inicial' ? (
                                 <span className="text-sm text-gray-500">Saldo inicial</span>
@@ -2092,7 +2088,7 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
                           </tr>
                           {linha.erros.length > 0 && (
                             <tr>
-                              <td colSpan={(modoInclusao ? 2 : 1) + 2 + datasTabela.length + (modoInclusao ? 1 : 0)} className="bg-error-50 px-3 py-2 text-xs text-error-700">
+                              <td colSpan={3 + datasTabela.length + (modoInclusao ? 1 : 0)} className="bg-error-50 px-3 py-2 text-xs text-error-700">
                                 {linha.erros.join(' ')}
                               </td>
                             </tr>
@@ -2131,11 +2127,6 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
                       <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-error-700">
                         Incluir
                       </th>
-                      {modoInclusao && (
-                        <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-error-700">
-                          Categoria
-                        </th>
-                      )}
                       <th className="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-error-700">
                         Área
                       </th>
@@ -2168,23 +2159,6 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
                                 onChange={(event) => handleToggleLinha(linha.id, event.target.checked)}
                               />
                             </td>
-                            {modoInclusao && (
-                              <td className="px-3 py-2 align-top">
-                                <input
-                                  type="text"
-                                  list={`categorias-gasto-${linha.id}`}
-                                  className="w-full rounded-md border border-gray-300 px-2 py-1 text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-error-500"
-                                  placeholder="Digite ou selecione uma categoria..."
-                                  value={linha.titulo}
-                                  onChange={(e) => handleTituloChange(linha.id, e.target.value)}
-                                />
-                                <datalist id={`categorias-gasto-${linha.id}`}>
-                                  {categoriasExistentes.filter(cat => cat.toLowerCase().startsWith('gasto') || !cat.toLowerCase().startsWith('gasto')).map(cat => (
-                                    <option key={cat} value={cat} />
-                                  ))}
-                                </datalist>
-                              </td>
-                            )}
                             <td className="px-3 py-2 align-top">
                               <select
                                 className="w-64 rounded-md border border-gray-300 bg-white px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-error-500"
@@ -2236,7 +2210,7 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
                           </tr>
                           {linha.erros.length > 0 && (
                             <tr>
-                              <td colSpan={(modoInclusao ? 2 : 1) + 1 + datasTabela.length + (modoInclusao ? 1 : 0)} className="bg-error-50 px-3 py-2 text-xs text-error-700">
+                              <td colSpan={2 + datasTabela.length + (modoInclusao ? 1 : 0)} className="bg-error-50 px-3 py-2 text-xs text-error-700">
                                 {linha.erros.join(' ')}
                               </td>
                             </tr>
