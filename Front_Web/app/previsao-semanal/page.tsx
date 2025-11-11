@@ -702,7 +702,7 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
             };
 
             // Formato com mês por extenso: 17/nov/25, 17-nov-2025, 17.nov.25
-            const comMesExtenso = texto.match(/^(\d{1,2})[\/-.]([a-zç]+)[\/-.]?(\d{2,4})?$/i);
+            const comMesExtenso = texto.match(/^(\d{1,2})[\/-.]([a-z]+)[\/-.]?(\d{2,4})?$/i);
             if (comMesExtenso) {
               const dia = Number(comMesExtenso[1]);
               const mesTexto = comMesExtenso[2].toLowerCase();
