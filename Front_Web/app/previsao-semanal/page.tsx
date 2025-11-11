@@ -703,7 +703,7 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
             };
 
             // Formato com mês por extenso: 17/nov/25, 17-nov-2025, 17.nov.25
-            const comMesExtenso = texto.match(/^(\d{1,2})[\/-.]([a-z]+)[\/-.]?(\d{2,4})?$/i);
+            const comMesExtenso = texto.match(/^(\d{1,2})[\/.\-]([a-z]+)[\/.\-]?(\d{2,4})?$/i);
             if (comMesExtenso) {
               const dia = Number(comMesExtenso[1]);
               const mesTexto = comMesExtenso[2].toLowerCase();
@@ -722,7 +722,7 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
             }
 
             // Formato completo com separadores variados: 17/11/25, 17.11.2025, 17-11-25
-            const completo = texto.match(/^(\d{1,2})[\/-.](\d{1,2})[\/-.](\d{2,4})$/);
+            const completo = texto.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})$/);
             if (completo) {
               const dia = Number(completo[1]);
               const mes = Number(completo[2]);
@@ -738,7 +738,7 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
             }
 
             // Formato sem ano: 17/11, 17.11, 17-11
-            const semAno = texto.match(/^(\d{1,2})[\/-.](\d{1,2})$/);
+            const semAno = texto.match(/^(\d{1,2})[\/.\-](\d{1,2})$/);
             if (semAno) {
               const dia = Number(semAno[1]);
               const mes = Number(semAno[2]);

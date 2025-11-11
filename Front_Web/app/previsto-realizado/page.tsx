@@ -3,8 +3,8 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { Header } from '@/components/layout';
 import { Card, Loading } from '@/components/ui';
-import { createClient } from '@/lib/supabase/client';
-import { formatCurrency } from '@/lib/formatacao';
+import { getSupabaseClient } from '@/lib/supabaseClient';
+import { formatCurrency } from '@/lib/mathParser';
 
 interface PrevisaoItem {
   data: string;
@@ -40,7 +40,7 @@ export default function PrevistoRealizadoPage() {
   const [periodoInicio, setPeriodoInicio] = useState('');
   const [periodoFim, setPeriodoFim] = useState('');
 
-  const supabase = createClient();
+  const supabase = getSupabaseClient();
 
   useEffect(() => {
     // Define período padrão: semana atual
