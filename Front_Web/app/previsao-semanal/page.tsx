@@ -1395,30 +1395,7 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
       });
     });
 
-    datasTabela.forEach((data, index) => {
-      itensParaInserir.push({
-        tipo: 'saldo_diario',
-        data,
-        categoria: 'Saldo diário calculado',
-        valor: Math.round((saldoDiarioPrevisto[index] ?? 0) * 100) / 100,
-        areaId: null,
-        contaId: null,
-        tipoReceitaId: null,
-        bancoId: null,
-        ordem: 900 + index,
-      });
-      itensParaInserir.push({
-        tipo: 'saldo_acumulado',
-        data,
-        categoria: 'Saldo acumulado calculado',
-        valor: Math.round((saldoAcumuladoPrevisto[index] ?? 0) * 100) / 100,
-        areaId: null,
-        contaId: null,
-        tipoReceitaId: null,
-        bancoId: null,
-        ordem: 950 + index,
-      });
-    });
+    // Saldos não são salvos no banco - são calculados na exibição
 
     if (itensParaInserir.length === 0) {
       setMensagem({ tipo: 'erro', texto: 'Nenhum valor válido foi encontrado para importação.' });
@@ -2340,14 +2317,12 @@ const LancamentoPrevisaoSemanalPage: React.FC = () => {
                                   {itensData.length} {itensData.length === 1 ? 'lançamento' : 'lançamentos'}
                                 </td>
                                 <td className="px-3 py-2 text-right text-gray-700">
-                                  <span className="text-xs text-gray-500">Dia: </span>
-                                  <span className={saldoDia >= 0 ? 'text-success-700' : 'text-error-700'}>
-                                    {formatCurrency(saldoDia)}
-                                  </span>
-                                </td>
-                                <td className="px-3 py-2 text-right">
                                   <span className="text-xs text-gray-500">Receitas: </span>
                                   <span className="text-success-700">{formatCurrency(totalReceitas)}</span>
+                                </td>
+                                <td className="px-3 py-2 text-right text-gray-700">
+                                  <span className="text-xs text-gray-500">Despesas: </span>
+                                  <span className="text-error-700">{formatCurrency(totalGastos)}</span>
                                 </td>
                                 <td className="px-3 py-2 text-right font-bold text-gray-900">
                                   {formatCurrency(saldosPorData[data])}
