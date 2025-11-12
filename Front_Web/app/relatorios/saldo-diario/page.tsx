@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 import { Header } from '@/components/layout';
-import { Button, Card, Loading } from '@/components/ui';
+import { Button, Card, Input, Loading, Modal } from '@/components/ui';
 import { formatCurrency } from '@/lib/mathParser';
 import {
   getOrCreateUser,
@@ -65,11 +67,25 @@ type LinhaComparativa = {
   percentual: number | null;
 };
 
+type LinhaBanco = {
+  chave: string;
+  titulo: string;
+  realizado: number;
+};
+
+type TabelaAccent = 'azul' | 'verde' | 'amarelo' | 'laranja' | 'cinza';
+
+type RenderTabelaOptions = {
+  accent?: TabelaAccent;
+  totalLabel?: string;
+  showTotals?: boolean;
+};
+
 type RelatorioSaldoDiario = {
   data: string;
   gastos: LinhaComparativa[];
   receitas: LinhaComparativa[];
-  bancos: LinhaComparativa[];
+  bancos: LinhaBanco[];
   resumo: {
     saldoInicialPrevisto: number;
     saldoInicialRealizado: number;
@@ -81,7 +97,6 @@ type RelatorioSaldoDiario = {
     resultadoRealizado: number;
     saldoFinalPrevisto: number;
     saldoFinalRealizado: number;
-    bancosPrevistos: number;
     bancosRealizados: number;
   };
 };
@@ -125,6 +140,14 @@ const categoriaRotulos: Record<CategoriaReceita, string> = {
   outras: 'Receitas - Outras Entradas',
 };
 
+const tabelaAccentClassNames: Record<TabelaAccent, string> = {
+  azul: 'report-section report-section--azul',
+  verde: 'report-section report-section--verde',
+  amarelo: 'report-section report-section--amarelo',
+  laranja: 'report-section report-section--laranja',
+  cinza: 'report-section report-section--cinza',
+};
+
 const calcularPercentual = (previsto: number, realizado: number): number | null => {
   if (Math.abs(previsto) < 0.0001) {
     return null;
@@ -140,32 +163,223 @@ const formatarPercentual = (valor: number | null): string => {
   return `${arredondado.toFixed(1).replace('.', ',')}%`;
 };
 
-const converterMapaParaLinhas = (mapa: Map<string, { titulo: string; previsto: number; realizado: number }>): LinhaComparativa[] =>
+const converterMapaParaLinhas = (
+  mapa: Map<string, { titulo: string; previsto: number; realizado: number }>,
+): LinhaComparativa[] =>
   Array.from(mapa.entries())
-    .map(([chave, item]) => {
-      const previsto = arredondar(item.previsto);
-      const realizado = arredondar(item.realizado);
+    .map(([chave, valor]) => {
+      const previsto = arredondar(valor.previsto);
+      const realizado = arredondar(valor.realizado);
       const desvio = arredondar(realizado - previsto);
       const percentual = calcularPercentual(previsto, realizado);
-      return { chave, titulo: item.titulo, previsto, realizado, desvio, percentual };
+      return {
+        chave,
+        titulo: valor.titulo,
+        previsto,
+        realizado,
+        desvio,
+        percentual,
+      };
     })
     .sort((a, b) => a.titulo.localeCompare(b.titulo, 'pt-BR'));
 
+const converterMapaParaBancos = (
+  mapa: Map<string, { titulo: string; realizado: number }>,
+): LinhaBanco[] =>
+  Array.from(mapa.entries())
+    .map(([chave, valor]) => ({
+      chave,
+      titulo: valor.titulo,
+      realizado: arredondar(valor.realizado),
+    }))
+    .sort((a, b) => b.realizado - a.realizado || a.titulo.localeCompare(b.titulo, 'pt-BR'));
+
 const somarPrevisto = (linhas: LinhaComparativa[]): number =>
-  arredondar(linhas.reduce((acc, linha) => acc + linha.previsto, 0));
+  arredondar(linhas.reduce((total, linha) => total + linha.previsto, 0));
 
 const somarRealizado = (linhas: LinhaComparativa[]): number =>
-  arredondar(linhas.reduce((acc, linha) => acc + linha.realizado, 0));
+  arredondar(linhas.reduce((total, linha) => total + linha.realizado, 0));
 
+const somarRealizadoBancos = (linhas: LinhaBanco[]): number =>
+  arredondar(linhas.reduce((total, linha) => total + linha.realizado, 0));
+
+const montarLinhasResultadoCaixa = (resumo: RelatorioSaldoDiario['resumo']): LinhaComparativa[] => [
+  {
+    chave: 'total-receitas',
+    titulo: 'Total de Receitas',
+    previsto: resumo.totalReceitasPrevistas,
+    realizado: resumo.totalReceitasRealizadas,
+    desvio: arredondar(resumo.totalReceitasRealizadas - resumo.totalReceitasPrevistas),
+    percentual: calcularPercentual(resumo.totalReceitasPrevistas, resumo.totalReceitasRealizadas),
+  },
+  {
+    chave: 'total-despesas',
+    titulo: 'Total de Despesas',
+    previsto: resumo.totalDespesasPrevistas,
+    realizado: resumo.totalDespesasRealizadas,
+    desvio: arredondar(resumo.totalDespesasRealizadas - resumo.totalDespesasPrevistas),
+    percentual: calcularPercentual(resumo.totalDespesasPrevistas, resumo.totalDespesasRealizadas),
+  },
+  {
+    chave: 'resultado-dia',
+    titulo: 'Saldo Operacional do Dia',
+    previsto: resumo.resultadoPrevisto,
+    realizado: resumo.resultadoRealizado,
+    desvio: arredondar(resumo.resultadoRealizado - resumo.resultadoPrevisto),
+    percentual: calcularPercentual(resumo.resultadoPrevisto, resumo.resultadoRealizado),
+  },
+];
+
+const montarLinhasResumoGeral = (resumo: RelatorioSaldoDiario['resumo']): LinhaComparativa[] => [
+  {
+    chave: 'saldo-anterior',
+    titulo: 'Saldo do Dia Anterior',
+    previsto: resumo.saldoInicialPrevisto,
+    realizado: resumo.saldoInicialRealizado,
+    desvio: arredondar(resumo.saldoInicialRealizado - resumo.saldoInicialPrevisto),
+    percentual: calcularPercentual(resumo.saldoInicialPrevisto, resumo.saldoInicialRealizado),
+  },
+  {
+    chave: 'resultado',
+    titulo: 'Resultado do Dia (Receitas - Despesas)',
+    previsto: resumo.resultadoPrevisto,
+    realizado: resumo.resultadoRealizado,
+    desvio: arredondar(resumo.resultadoRealizado - resumo.resultadoPrevisto),
+    percentual: calcularPercentual(resumo.resultadoPrevisto, resumo.resultadoRealizado),
+  },
+  {
+    chave: 'saldo-final',
+    titulo: 'Saldo Final do Dia',
+    previsto: resumo.saldoFinalPrevisto,
+    realizado: resumo.saldoFinalRealizado,
+    desvio: arredondar(resumo.saldoFinalRealizado - resumo.saldoFinalPrevisto),
+    percentual: calcularPercentual(resumo.saldoFinalPrevisto, resumo.saldoFinalRealizado),
+  },
+];
+
+const renderTabelaComparativa = (
+  titulo: string,
+  linhas: LinhaComparativa[],
+  options: RenderTabelaOptions = {},
+) => {
+  const totalPrevisto = somarPrevisto(linhas);
+  const totalRealizado = somarRealizado(linhas);
+  const totalDesvio = arredondar(totalRealizado - totalPrevisto);
+  const totalPercentual = calcularPercentual(totalPrevisto, totalRealizado);
+
+  const accent = options.accent ?? 'azul';
+  const totalLabel = options.totalLabel ?? 'Totais';
+  const showTotals = options.showTotals ?? true;
+  const sectionClass = tabelaAccentClassNames[accent] ?? tabelaAccentClassNames.azul;
+
+  return (
+    <div className={sectionClass}>
+      <div className="report-section__header">
+        <span>{titulo}</span>
+      </div>
+      <table className="report-section__table">
+        <thead>
+          <tr>
+            <th>Categoria</th>
+            <th>Previsto</th>
+            <th>Realizado</th>
+            <th>Desvio</th>
+            <th>% Desvio</th>
+          </tr>
+        </thead>
+        <tbody>
+          {linhas.length === 0 ? (
+            <tr>
+              <td colSpan={5} className="report-section__empty-cell">
+                Nenhuma informação encontrada para esta seção.
+              </td>
+            </tr>
+          ) : (
+            linhas.map((linha) => (
+              <tr key={linha.chave}>
+                <td>{linha.titulo}</td>
+                <td>{formatCurrency(linha.previsto)}</td>
+                <td>{formatCurrency(linha.realizado)}</td>
+                <td className={linha.desvio >= 0 ? 'report-value--positivo' : 'report-value--negativo'}>
+                  {formatCurrency(linha.desvio)}
+                </td>
+                <td>{formatarPercentual(linha.percentual)}</td>
+              </tr>
+            ))
+          )}
+        </tbody>
+        {showTotals && (
+          <tfoot>
+            <tr>
+              <td>{totalLabel}</td>
+              <td>{formatCurrency(totalPrevisto)}</td>
+              <td>{formatCurrency(totalRealizado)}</td>
+              <td className={totalDesvio >= 0 ? 'report-value--positivo' : 'report-value--negativo'}>
+                {formatCurrency(totalDesvio)}
+              </td>
+              <td>{formatarPercentual(totalPercentual)}</td>
+            </tr>
+          </tfoot>
+        )}
+      </table>
+    </div>
+  );
+};
+
+const renderTabelaBancos = (titulo: string, linhas: LinhaBanco[]) => {
+  const totalRealizado = somarRealizadoBancos(linhas);
+
+  return (
+    <div className="report-section report-section--cinza">
+      <div className="report-section__header">
+        <span>{titulo}</span>
+      </div>
+      <table className="report-section__table report-section__table--compact">
+        <thead>
+          <tr>
+            <th>Banco</th>
+            <th>Realizado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {linhas.length === 0 ? (
+            <tr>
+              <td colSpan={2} className="report-section__empty-cell">
+                Nenhum saldo bancário informado.
+              </td>
+            </tr>
+          ) : (
+            linhas.map((linha) => (
+              <tr key={linha.chave}>
+                <td>{linha.titulo}</td>
+                <td>{formatCurrency(linha.realizado)}</td>
+              </tr>
+            ))
+          )}
+        </tbody>
+        {linhas.length > 0 && (
+          <tfoot>
+            <tr>
+              <td>Total em bancos</td>
+              <td>{formatCurrency(totalRealizado)}</td>
+            </tr>
+          </tfoot>
+        )}
+      </table>
+    </div>
+  );
+};
 const RelatorioSaldoDiarioPage: React.FC = () => {
   const [usuario, setUsuario] = useState<UsuarioRow | null>(null);
   const [carregandoUsuario, setCarregandoUsuario] = useState(true);
   const [carregandoDados, setCarregandoDados] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const [dataReferencia, setDataReferencia] = useState(() => toISODate(new Date()));
   const [relatorio, setRelatorio] = useState<RelatorioSaldoDiario | null>(null);
-
-  const reportRef = useRef<HTMLDivElement | null>(null);
+  const [dataReferencia, setDataReferencia] = useState(() => toISODate(new Date()));
+  const [emailModalAberto, setEmailModalAberto] = useState(false);
+  const [emailDestino, setEmailDestino] = useState('');
+  const [emailErro, setEmailErro] = useState<string | null>(null);
+  const [enviandoEmail, setEnviandoEmail] = useState(false);
 
   const carregarUsuario = useCallback(async () => {
     try {
@@ -203,12 +417,11 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
   }, [carregarUsuario]);
 
   const carregarRelatorio = useCallback(
-    async (usuarioAtual: UsuarioRow, data: string) => {
+    async (_usuarioAtual: UsuarioRow, data: string) => {
       try {
         setCarregandoDados(true);
         const supabase = getSupabaseClient();
 
-        // Todos os usuários podem visualizar todos os dados
         const [previsoesRes, gastosRes, receitasRes, saldosRes] = await Promise.all([
           supabase
             .from('pvi_previsao_itens')
@@ -242,7 +455,7 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
 
         const mapaGastos = new Map<string, { titulo: string; previsto: number; realizado: number }>();
         const mapaReceitas = new Map<string, { titulo: string; previsto: number; realizado: number }>();
-        const mapaBancos = new Map<string, { titulo: string; previsto: number; realizado: number }>();
+        const mapaBancosRealizados = new Map<string, { titulo: string; realizado: number }>();
 
         let saldoInicialPrevisto = 0;
         let saldoFinalPrevisto = 0;
@@ -256,7 +469,9 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
 
           if (tipo === 'gasto') {
             const areaId = toString((item as PrevisaoRow).pvi_are_id, 'sem-area');
-            const titulo = areaRel?.are_nome ? toString(areaRel.are_nome) : toString((item as PrevisaoRow).pvi_categoria, 'Área não informada');
+            const titulo = areaRel?.are_nome
+              ? toString(areaRel.are_nome)
+              : toString((item as PrevisaoRow).pvi_categoria, 'Área não informada');
             const chave = `${areaId}-${titulo.toLowerCase()}`;
             const existente = mapaGastos.get(chave) ?? { titulo, previsto: 0, realizado: 0 };
             existente.previsto += valor;
@@ -273,12 +488,10 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
             mapaReceitas.set(chave, existente);
 
             if ((item as PrevisaoRow).pvi_ban_id !== null && (item as PrevisaoRow).pvi_ban_id !== undefined) {
-              const bancoId = toString((item as PrevisaoRow).pvi_ban_id, 'sem-banco');
-              const bancoTitulo = bancoRel?.ban_nome ? toString(bancoRel.ban_nome) : 'Banco não informado';
-              const chaveBanco = `${bancoId}-${bancoTitulo.toLowerCase()}`;
-              const existenteBanco = mapaBancos.get(chaveBanco) ?? { titulo: bancoTitulo, previsto: 0, realizado: 0 };
-              existenteBanco.previsto += valor;
-              mapaBancos.set(chaveBanco, existenteBanco);
+              const bancoRelTitulo = bancoRel?.ban_nome ? toString(bancoRel.ban_nome) : 'Banco não informado';
+              const bancoChave = `${toString((item as PrevisaoRow).pvi_ban_id, 'sem-banco')}-${bancoRelTitulo.toLowerCase()}`;
+              const existenteBanco = mapaBancosRealizados.get(bancoChave) ?? { titulo: bancoRelTitulo, realizado: 0 };
+              mapaBancosRealizados.set(bancoChave, existenteBanco);
             }
           }
 
@@ -304,34 +517,33 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
         normalizeRelation(receitas).forEach((item) => {
           const contaRel = normalizeRelation(item.ctr_contas_receita)[0];
           const codigo = contaRel?.ctr_codigo ? toString(contaRel.ctr_codigo) : null;
-        const categoria = obterCategoriaReceita(codigo);
-        const titulo = categoriaRotulos[categoria];
-        const chave = categoria;
-        const existente = mapaReceitas.get(chave) ?? { titulo, previsto: 0, realizado: 0 };
-        existente.realizado += arredondar(toNumber(item.rec_valor));
-        mapaReceitas.set(chave, existente);
-      });
+          const categoria = obterCategoriaReceita(codigo);
+          const titulo = categoriaRotulos[categoria];
+          const chave = categoria;
+          const existente = mapaReceitas.get(chave) ?? { titulo, previsto: 0, realizado: 0 };
+          existente.realizado += arredondar(toNumber(item.rec_valor));
+          mapaReceitas.set(chave, existente);
+        });
 
         normalizeRelation(saldosBancarios).forEach((item) => {
           const bancoRel = normalizeRelation(item.ban_bancos)[0];
           const bancoTitulo = bancoRel?.ban_nome ? toString(bancoRel.ban_nome) : 'Banco não informado';
           const bancoId = toString(item.sdb_ban_id, 'sem-banco');
           const chave = `${bancoId}-${bancoTitulo.toLowerCase()}`;
-          const existente = mapaBancos.get(chave) ?? { titulo: bancoTitulo, previsto: 0, realizado: 0 };
+          const existente = mapaBancosRealizados.get(chave) ?? { titulo: bancoTitulo, realizado: 0 };
           existente.realizado += arredondar(toNumber(item.sdb_saldo));
-          mapaBancos.set(chave, existente);
+          mapaBancosRealizados.set(chave, existente);
         });
 
         const gastos = converterMapaParaLinhas(mapaGastos);
         const receitasComparativo = converterMapaParaLinhas(mapaReceitas);
-        const bancos = converterMapaParaLinhas(mapaBancos);
+        const bancos = converterMapaParaBancos(mapaBancosRealizados);
 
         const totalDespesasPrevistas = somarPrevisto(gastos);
         const totalDespesasRealizadas = somarRealizado(gastos);
         const totalReceitasPrevistas = somarPrevisto(receitasComparativo);
         const totalReceitasRealizadas = somarRealizado(receitasComparativo);
-        const totalBancosPrevistos = somarPrevisto(bancos);
-        const totalBancosRealizados = somarRealizado(bancos);
+        const totalBancosRealizados = somarRealizadoBancos(bancos);
 
         const resultadoPrevisto = arredondar(totalReceitasPrevistas - totalDespesasPrevistas);
         const resultadoRealizado = arredondar(totalReceitasRealizadas - totalDespesasRealizadas);
@@ -359,7 +571,6 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
             resultadoRealizado,
             saldoFinalPrevisto,
             saldoFinalRealizado,
-            bancosPrevistos: totalBancosPrevistos,
             bancosRealizados: totalBancosRealizados,
           },
         });
@@ -387,193 +598,260 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
     carregarRelatorio(usuario, dataReferencia);
   }, [usuario, dataReferencia, carregarRelatorio]);
 
-  const handleExportPdf = () => {
-    if (!reportRef.current) {
-      return;
+  const linhasResultadoCaixa = useMemo(() => {
+    if (!relatorio) {
+      return [];
+    }
+    return montarLinhasResultadoCaixa(relatorio.resumo);
+  }, [relatorio]);
+
+  const linhasResumoGeral = useMemo(() => {
+    if (!relatorio) {
+      return [];
+    }
+    return montarLinhasResumoGeral(relatorio.resumo);
+  }, [relatorio]);
+
+  const nomeArquivoPdf = useMemo(() => {
+    if (!relatorio) {
+      return 'Relatorio_Saldo_Diario.pdf';
+    }
+    return `Relatorio_Saldo_Diario_${relatorio.data}.pdf`;
+  }, [relatorio]);
+  const gerarDocumentoPdf = useCallback(() => {
+    if (!relatorio) {
+      return null;
     }
 
-    const html = reportRef.current.innerHTML;
-    const titulo = 'Relatório - Saldo Diário';
-    const janela = window.open('', '_blank', 'noopener,noreferrer,width=1200,height=900');
-    if (!janela) {
-      return;
-    }
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    doc.setFontSize(16);
+    doc.setTextColor(30, 41, 59);
+    doc.text('Saldo Diário', 14, 18);
+    doc.setFontSize(11);
+    doc.text(`Data de referência: ${formatarDataPt(relatorio.data)}`, 14, 26);
 
-    const estilos = `
-      * { font-family: 'Segoe UI', Arial, sans-serif; color: #111827; box-sizing: border-box; }
-      body { margin: 24px; background-color: #f8fafc; }
-      h1 { font-size: 20px; margin-bottom: 4px; }
-      h2 { font-size: 14px; color: #6b7280; margin-bottom: 16px; }
-      table { width: 100%; border-collapse: collapse; margin-top: 12px; background-color: #ffffff; page-break-inside: avoid; }
-      th, td { border: 1px solid #d1d5db; padding: 8px 10px; font-size: 12px; }
-      th { background-color: #f3f4f6; text-align: right; font-weight: 600; }
-      th:first-child, td:first-child { text-align: left; }
-      .text-right { text-align: right; }
-      .font-semibold { font-weight: 600; }
-      .uppercase { text-transform: uppercase; }
-      .tracking-wide { letter-spacing: 0.05em; }
-      .bg-white { background-color: #ffffff; }
-      .bg-gray-50 { background-color: #f9fafb; }
-      .bg-gray-100 { background-color: #f3f4f6; }
-      .bg-primary-50 { background-color: #eef2ff; }
-      .bg-success-50 { background-color: #ecfdf5; }
-      .bg-error-50 { background-color: #fee2e2; }
-      .text-gray-600 { color: #4b5563; }
-      .text-gray-700 { color: #374151; }
-      .text-gray-900 { color: #111827; }
-      .text-success-700 { color: #047857; }
-      .text-error-700 { color: #b91c1c; }
-      .px-4 { padding-left: 16px; padding-right: 16px; }
-      .py-3 { padding-top: 12px; padding-bottom: 12px; }
-      .rounded-lg { border-radius: 12px; }
-      .border { border: 1px solid #e5e7eb; }
-      .border-gray-200 { border-color: #e5e7eb; }
-      .divide-y > * + * { border-top: 1px solid #e5e7eb; }
-      .divide-gray-100 > * + * { border-color: #f5f5f5; }
-      .grid { display: grid; gap: 16px; }
-      @media print {
-        body { background-color: white; }
-        table { page-break-inside: avoid; }
-      }
-    `;
+    let yPos = 32;
 
-    const documento = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${titulo}</title><style>${estilos}</style></head><body>${html}</body></html>`;
-
-    // Define o onload ANTES de escrever o documento
-    janela.onload = () => {
-      setTimeout(() => {
-        try {
-          janela.focus();
-          janela.print();
-        } catch (err) {
-          console.error('Erro ao imprimir:', err);
-          alert('Não foi possível abrir a janela de impressão. Verifique se os popups estão habilitados.');
-        }
-      }, 1000);
+    const adicionarSecao = (titulo: string) => {
+      doc.setFontSize(12);
+      doc.setTextColor(31, 73, 125);
+      doc.text(titulo, 14, yPos);
+      yPos += 4;
     };
 
-    janela.document.open();
-    janela.document.write(documento);
-    janela.document.close();
-  };
-
-  const renderTabelaComparativa = useCallback(
-    (titulo: string, linhas: LinhaComparativa[]) => {
+    const gerarTabelaComparativaPdf = (
+      titulo: string,
+      linhas: LinhaComparativa[],
+      totalLabel: string,
+      mostrarPercentual = true,
+    ) => {
+      adicionarSecao(titulo);
       const totalPrevisto = somarPrevisto(linhas);
       const totalRealizado = somarRealizado(linhas);
       const totalDesvio = arredondar(totalRealizado - totalPrevisto);
       const totalPercentual = calcularPercentual(totalPrevisto, totalRealizado);
 
-      return (
-        <Card title={titulo} variant="default">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                <tr>
-                  <th className="px-4 py-3 text-left font-semibold">Categoria</th>
-                  <th className="px-4 py-3 text-right font-semibold">Previsão</th>
-                  <th className="px-4 py-3 text-right font-semibold">Realizado</th>
-                  <th className="px-4 py-3 text-right font-semibold">Desvio</th>
-                  <th className="px-4 py-3 text-right font-semibold">% Desvio</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
-                {linhas.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-6 text-center text-sm text-gray-600">
-                      Nenhuma informação encontrada para esta seção.
-                    </td>
-                  </tr>
-                ) : (
-                  linhas.map((linha) => (
-                    <tr key={linha.chave}>
-                      <td className="px-4 py-3 text-gray-700">{linha.titulo}</td>
-                      <td className="px-4 py-3 text-right text-gray-700">{formatCurrency(linha.previsto)}</td>
-                      <td className="px-4 py-3 text-right text-gray-700">{formatCurrency(linha.realizado)}</td>
-                      <td className={`px-4 py-3 text-right ${linha.desvio >= 0 ? 'text-success-700' : 'text-error-700'}`}>
-                        {formatCurrency(linha.desvio)}
-                      </td>
-                      <td className="px-4 py-3 text-right text-gray-700">{formatarPercentual(linha.percentual)}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-              <tfoot className="bg-gray-100 text-gray-900">
-                <tr className="font-semibold">
-                  <td className="px-4 py-3">Totais</td>
-                  <td className="px-4 py-3 text-right">{formatCurrency(totalPrevisto)}</td>
-                  <td className="px-4 py-3 text-right">{formatCurrency(totalRealizado)}</td>
-                  <td className={`px-4 py-3 text-right ${totalDesvio >= 0 ? 'text-success-700' : 'text-error-700'}`}>
-                    {formatCurrency(totalDesvio)}
-                  </td>
-                  <td className="px-4 py-3 text-right">{formatarPercentual(totalPercentual)}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </Card>
-      );
-    },
-    [],
-  );
+      autoTable(doc, {
+        startY: yPos,
+        head: [
+          mostrarPercentual
+            ? ['Categoria', 'Previsto', 'Realizado', 'Desvio', '% Desvio']
+            : ['Categoria', 'Previsto', 'Realizado', 'Desvio'],
+        ],
+        body: linhas.map((linha) => (
+          mostrarPercentual
+            ? [
+                linha.titulo,
+                formatCurrency(linha.previsto),
+                formatCurrency(linha.realizado),
+                formatCurrency(linha.desvio),
+                formatarPercentual(linha.percentual),
+              ]
+            : [
+                linha.titulo,
+                formatCurrency(linha.previsto),
+                formatCurrency(linha.realizado),
+                formatCurrency(linha.desvio),
+              ]
+        )),
+        foot: [
+          mostrarPercentual
+            ? [
+                totalLabel,
+                formatCurrency(totalPrevisto),
+                formatCurrency(totalRealizado),
+                formatCurrency(totalDesvio),
+                formatarPercentual(totalPercentual),
+              ]
+            : [
+                totalLabel,
+                formatCurrency(totalPrevisto),
+                formatCurrency(totalRealizado),
+                formatCurrency(totalDesvio),
+              ],
+        ],
+        theme: 'grid',
+        styles: { fontSize: 7, cellPadding: 1.5 },
+        headStyles: { fillColor: [219, 229, 241], textColor: [31, 73, 125], fontStyle: 'bold' },
+        footStyles: { fillColor: [238, 243, 251], textColor: [31, 73, 125], fontStyle: 'bold' },
+        columnStyles: mostrarPercentual
+          ? {
+              0: { cellWidth: 60, halign: 'left' },
+              1: { halign: 'right' },
+              2: { halign: 'right' },
+              3: { halign: 'right' },
+              4: { halign: 'right' },
+            }
+          : {
+              0: { cellWidth: 70, halign: 'left' },
+              1: { halign: 'right' },
+              2: { halign: 'right' },
+              3: { halign: 'right' },
+            },
+        margin: { left: 14, right: 14 },
+      });
 
-  const linhasResumo = useMemo(() => {
-    if (!relatorio) {
-      return [];
+      const finalY = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY;
+      yPos = finalY ? finalY + 6 : yPos + 24;
+    };
+
+    const gerarTabelaBancosPdf = (linhas: LinhaBanco[]) => {
+      adicionarSecao('Saldos Bancários (Realizado)');
+      const totalRealizado = somarRealizadoBancos(linhas);
+
+      autoTable(doc, {
+        startY: yPos,
+        head: [['Banco', 'Saldo realizado']],
+        body:
+          linhas.length > 0
+            ? linhas.map((linha) => [linha.titulo, formatCurrency(linha.realizado)])
+            : [['Nenhum banco informado', '—']],
+        foot: [[linhas.length > 0 ? 'Total em bancos' : '', linhas.length > 0 ? formatCurrency(totalRealizado) : '']],
+        theme: 'grid',
+        styles: { fontSize: 7, cellPadding: 1.5 },
+        headStyles: { fillColor: [229, 231, 235], textColor: [55, 65, 81], fontStyle: 'bold' },
+        footStyles: { fillColor: [243, 244, 246], textColor: [55, 65, 81], fontStyle: 'bold' },
+        columnStyles: {
+          0: { cellWidth: 80, halign: 'left' },
+          1: { halign: 'right' },
+        },
+        margin: { left: 14, right: 14 },
+      });
+
+      const finalY = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY;
+      yPos = finalY ? finalY + 6 : yPos + 20;
+    };
+
+    gerarTabelaComparativaPdf('Gastos por área', relatorio.gastos, 'Total de gastos');
+    gerarTabelaComparativaPdf('Receitas por categoria', relatorio.receitas, 'Total de receitas');
+    gerarTabelaComparativaPdf(
+      'Resultado de saldo de caixa do dia',
+      linhasResultadoCaixa,
+      'Totais do dia',
+    );
+    gerarTabelaComparativaPdf('Resumo geral', linhasResumoGeral, 'Resumo consolidado');
+    gerarTabelaBancosPdf(relatorio.bancos);
+
+    return doc;
+  }, [linhasResumoGeral, linhasResultadoCaixa, relatorio]);
+
+  const handleExportPdf = useCallback(() => {
+    const doc = gerarDocumentoPdf();
+    if (!doc) {
+      return;
     }
-    const { resumo } = relatorio;
-    const linhas: LinhaComparativa[] = [
-      {
-        chave: 'saldo-inicial',
-        titulo: 'Saldo Inicial',
-        previsto: resumo.saldoInicialPrevisto,
-        realizado: resumo.saldoInicialRealizado,
-        desvio: arredondar(resumo.saldoInicialRealizado - resumo.saldoInicialPrevisto),
-        percentual: calcularPercentual(resumo.saldoInicialPrevisto, resumo.saldoInicialRealizado),
-      },
-      {
-        chave: 'receitas',
-        titulo: 'Receitas',
-        previsto: resumo.totalReceitasPrevistas,
-        realizado: resumo.totalReceitasRealizadas,
-        desvio: arredondar(resumo.totalReceitasRealizadas - resumo.totalReceitasPrevistas),
-        percentual: calcularPercentual(resumo.totalReceitasPrevistas, resumo.totalReceitasRealizadas),
-      },
-      {
-        chave: 'despesas',
-        titulo: 'Despesas',
-        previsto: resumo.totalDespesasPrevistas,
-        realizado: resumo.totalDespesasRealizadas,
-        desvio: arredondar(resumo.totalDespesasRealizadas - resumo.totalDespesasPrevistas),
-        percentual: calcularPercentual(resumo.totalDespesasPrevistas, resumo.totalDespesasRealizadas),
-      },
-      {
-        chave: 'resultado',
-        titulo: 'Resultado (Receitas - Despesas)',
-        previsto: resumo.resultadoPrevisto,
-        realizado: resumo.resultadoRealizado,
-        desvio: arredondar(resumo.resultadoRealizado - resumo.resultadoPrevisto),
-        percentual: calcularPercentual(resumo.resultadoPrevisto, resumo.resultadoRealizado),
-      },
-      {
-        chave: 'saldo-final',
-        titulo: 'Saldo Final',
-        previsto: resumo.saldoFinalPrevisto,
-        realizado: resumo.saldoFinalRealizado,
-        desvio: arredondar(resumo.saldoFinalRealizado - resumo.saldoFinalPrevisto),
-        percentual: calcularPercentual(resumo.saldoFinalPrevisto, resumo.saldoFinalRealizado),
-      },
-      {
-        chave: 'saldo-bancos',
-        titulo: 'Saldo em Bancos',
-        previsto: resumo.bancosPrevistos,
-        realizado: resumo.bancosRealizados,
-        desvio: arredondar(resumo.bancosRealizados - resumo.bancosPrevistos),
-        percentual: calcularPercentual(resumo.bancosPrevistos, resumo.bancosRealizados),
-      },
-    ];
-    return linhas;
-  }, [relatorio]);
+    doc.save(nomeArquivoPdf);
+  }, [gerarDocumentoPdf, nomeArquivoPdf]);
+
+  const handleAbrirModalEmail = useCallback(() => {
+    if (usuario?.usr_email) {
+      setEmailDestino(usuario.usr_email);
+    }
+    setEmailErro(null);
+    setEmailModalAberto(true);
+  }, [usuario]);
+
+  const handleFecharModalEmail = useCallback(() => {
+    setEmailModalAberto(false);
+    setEmailErro(null);
+  }, []);
+
+  const handleEnviarEmail = useCallback(async () => {
+    if (!relatorio) {
+      return;
+    }
+
+    const email = emailDestino.trim();
+    if (!email || !/^\S+@\S+\.\S+$/.test(email)) {
+      setEmailErro('Informe um e-mail válido.');
+      return;
+    }
+    setEmailErro(null);
+
+    try {
+      setEnviandoEmail(true);
+      const doc = gerarDocumentoPdf();
+      if (!doc) {
+        throw new Error('Não foi possível gerar o relatório em PDF.');
+      }
+
+      const blob = doc.output('blob');
+      const arquivo = new File([blob], nomeArquivoPdf, { type: 'application/pdf' });
+      const nav = navigator as Navigator & {
+        canShare?: (data: ShareData & { files?: File[] }) => boolean;
+        share?: (data: ShareData & { files?: File[] }) => Promise<void>;
+      };
+
+      const shareData = {
+        files: [arquivo],
+        title: 'Saldo Diário',
+        text: `Relatório de saldo diário - ${formatarDataPt(relatorio.data)}`,
+      } as ShareData & { files: File[] };
+
+      let compartilhado = false;
+      if (nav.share && nav.canShare?.(shareData)) {
+        try {
+          await nav.share(shareData);
+          compartilhado = true;
+        } catch (shareError) {
+          console.warn('Compartilhamento nativo não concluído, aplicando fallback.', shareError);
+        }
+      }
+
+      if (!compartilhado) {
+        const blobUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = blobUrl;
+        anchor.download = nomeArquivoPdf;
+        anchor.style.display = 'none';
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+        URL.revokeObjectURL(blobUrl);
+
+        const assunto = `Relatório Saldo Diário - ${formatarDataPt(relatorio.data)}`;
+        const corpo = encodeURIComponent(
+          [
+            `Segue o relatório de saldo diário referente a ${formatarDataPt(relatorio.data)}.`,
+            '',
+            'O arquivo PDF foi baixado automaticamente neste dispositivo. Anexe-o ao e-mail antes do envio.',
+          ].join('\n'),
+        );
+
+        const outlookUrl = `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(
+          email,
+        )}&subject=${encodeURIComponent(assunto)}&body=${corpo}`;
+        window.open(outlookUrl, '_blank', 'noopener,noreferrer');
+      }
+
+      setEmailModalAberto(false);
+    } catch (error) {
+      console.error('Erro ao preparar envio por e-mail:', error);
+      setEmailErro('Não foi possível preparar o envio. Tente novamente.');
+    } finally {
+      setEnviandoEmail(false);
+    }
+  }, [emailDestino, gerarDocumentoPdf, nomeArquivoPdf, relatorio]);
 
   if (carregandoUsuario) {
     return (
@@ -585,20 +863,22 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
       </>
     );
   }
-
   return (
     <>
       <Header
         title="Relatório - Saldo Diário"
         subtitle={`Data selecionada: ${formatarDataPt(dataReferencia)}`}
         actions={
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="report-actions">
             <input
               type="date"
               value={dataReferencia}
               onChange={(event) => setDataReferencia(event.target.value)}
               className="rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
+            <Button variant="secondary" onClick={handleAbrirModalEmail} disabled={!relatorio || carregandoDados}>
+              Enviar por e-mail
+            </Button>
             <Button variant="primary" onClick={handleExportPdf} disabled={!relatorio || carregandoDados}>
               Exportar PDF
             </Button>
@@ -620,22 +900,77 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
         )}
 
         {relatorio && !carregandoDados && (
-          <div ref={reportRef} className="space-y-6">
-            <Card variant="default">
-              <div className="flex flex-col gap-2">
-                <h1 className="text-xl font-semibold text-gray-900">Saldo Diário</h1>
-                <p className="text-sm text-gray-600">Data de referência: {formatarDataPt(relatorio.data)}</p>
+          <div className="report-wrapper">
+            <div className="report-header">
+              <div>
+                <p className="report-header__title">Saldo Diário</p>
+                <p className="report-header__subtitle">Data de referência: {formatarDataPt(relatorio.data)}</p>
               </div>
-            </Card>
-
-            {renderTabelaComparativa('Resumo Geral', linhasResumo)}
-
-            <div className="grid gap-6 lg:grid-cols-2">
-              {renderTabelaComparativa('Gastos por Área', relatorio.gastos)}
-              {renderTabelaComparativa('Receitas por Categoria', relatorio.receitas)}
             </div>
 
-            {renderTabelaComparativa('Saldos por Banco', relatorio.bancos)}
+            <div className="report-metrics">
+              <div className="report-metric">
+                <span className="report-metric__label">Receitas realizadas</span>
+                <span
+                  className={`report-metric__value ${
+                    relatorio.resumo.totalReceitasRealizadas >= relatorio.resumo.totalReceitasPrevistas
+                      ? 'text-emerald-700'
+                      : 'text-amber-600'
+                  }`}
+                >
+                  {formatCurrency(relatorio.resumo.totalReceitasRealizadas)}
+                </span>
+                <span className="report-metric__subvalue">
+                  Previsto: {formatCurrency(relatorio.resumo.totalReceitasPrevistas)}
+                </span>
+              </div>
+              <div className="report-metric">
+                <span className="report-metric__label">Despesas realizadas</span>
+                <span
+                  className={`report-metric__value ${
+                    relatorio.resumo.totalDespesasRealizadas <= relatorio.resumo.totalDespesasPrevistas
+                      ? 'text-emerald-700'
+                      : 'text-rose-600'
+                  }`}
+                >
+                  {formatCurrency(relatorio.resumo.totalDespesasRealizadas)}
+                </span>
+                <span className="report-metric__subvalue">
+                  Previsto: {formatCurrency(relatorio.resumo.totalDespesasPrevistas)}
+                </span>
+              </div>
+              <div className="report-metric">
+                <span className="report-metric__label">Saldo em bancos</span>
+                <span className="report-metric__value text-slate-800">
+                  {formatCurrency(relatorio.resumo.bancosRealizados)}
+                </span>
+                <span className="report-metric__subvalue">
+                  Saldo final previsto: {formatCurrency(relatorio.resumo.saldoFinalPrevisto)}
+                </span>
+              </div>
+            </div>
+
+            <div className="report-grid report-grid--two">
+              {renderTabelaComparativa('Gastos por Área', relatorio.gastos, {
+                accent: 'amarelo',
+                totalLabel: 'Total de Gastos',
+              })}
+              {renderTabelaComparativa('Receitas por Categoria', relatorio.receitas, {
+                accent: 'verde',
+                totalLabel: 'Total de Receitas',
+              })}
+            </div>
+
+            <div className="report-grid report-grid--three">
+              {renderTabelaComparativa('Resultado de Saldo de Caixa do Dia', linhasResultadoCaixa, {
+                accent: 'laranja',
+                showTotals: false,
+              })}
+              {renderTabelaComparativa('Resumo Geral', linhasResumoGeral, {
+                accent: 'azul',
+              })}
+              {renderTabelaBancos('Saldos Bancários', relatorio.bancos)}
+            </div>
           </div>
         )}
 
@@ -647,6 +982,44 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
           </Card>
         )}
       </div>
+
+      <Modal
+        isOpen={emailModalAberto}
+        onClose={handleFecharModalEmail}
+        title="Enviar relatório por e-mail"
+        footer={
+          <div className="flex justify-end gap-3">
+            <Button variant="secondary" onClick={handleFecharModalEmail} disabled={enviandoEmail}>
+              Cancelar
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleEnviarEmail}
+              loading={enviandoEmail}
+              disabled={enviandoEmail}
+            >
+              Enviar e abrir Outlook
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <Input
+            label="Destinatário"
+            type="email"
+            value={emailDestino}
+            onChange={(event) => setEmailDestino(event.target.value)}
+            placeholder="usuario@empresa.com.br"
+            required
+            fullWidth
+            error={emailErro ?? undefined}
+          />
+          <p className="text-xs text-gray-500">
+            O arquivo em PDF será gerado automaticamente. Caso o compartilhamento direto não esteja disponível neste
+            dispositivo, abriremos o Outlook Web com o e-mail preenchido e o arquivo já salvo nos seus downloads.
+          </p>
+        </div>
+      </Modal>
     </>
   );
 };
