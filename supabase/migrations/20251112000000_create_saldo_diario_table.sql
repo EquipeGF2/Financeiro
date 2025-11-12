@@ -9,7 +9,14 @@
 -- TABELA: sdd_saldo_diario (Saldo Diário)
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS financas.sdd_saldo_diario (
+-- Limpar objetos existentes (se houver tentativas anteriores)
+DROP TABLE IF EXISTS financas.sdd_saldo_diario CASCADE;
+DROP FUNCTION IF EXISTS financas.atualizar_timestamp_saldo_diario() CASCADE;
+DROP FUNCTION IF EXISTS financas.obter_saldo_inicial(date) CASCADE;
+DROP FUNCTION IF EXISTS financas.obter_saldo_final(date) CASCADE;
+DROP FUNCTION IF EXISTS financas.calcular_resultado_dia(date) CASCADE;
+
+CREATE TABLE financas.sdd_saldo_diario (
   sdd_id bigserial PRIMARY KEY,
   sdd_data date NOT NULL,
   sdd_saldo_inicial numeric(15,2) NOT NULL DEFAULT 0,
