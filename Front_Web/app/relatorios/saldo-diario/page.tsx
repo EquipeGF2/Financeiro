@@ -706,7 +706,7 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
       linhas: LinhaTabela[],
       { layout = 'comparativo', accent = 'azul', totalLabel, showTotals }: TabelaPdfOptions = {},
     ) => {
-      posicaoAtual += 4;
+      posicaoAtual += 10;
 
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(9);
@@ -790,7 +790,7 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
         bodyStyles: { halign: 'right' },
         alternateRowStyles: { fillColor: [248, 250, 252] },
         columnStyles: {
-          0: { halign: 'left', cellWidth: 45 }
+          0: { halign: 'left', cellWidth: 75 }
         },
         margin: { left: margemHorizontal, right: margemHorizontal },
         footStyles: { fontStyle: 'bold', fillColor: [255, 255, 255], textColor: [33, 37, 41], fontSize: 8 },
