@@ -17,12 +17,6 @@ import { getUserSession } from '@/lib/userSession';
 
 const toISODate = (date: Date): string => date.toISOString().split('T')[0];
 
-const adicionarDias = (date: Date, dias: number): Date => {
-  const nova = new Date(date);
-  nova.setDate(nova.getDate() + dias);
-  return nova;
-};
-
 const formatarDataPt = (iso: string): string => {
   if (!iso) return '';
   const [ano, mes, dia] = iso.split('-');
@@ -31,46 +25,46 @@ const formatarDataPt = (iso: string): string => {
 
 type MaybeArray<T> = T | T[] | null | undefined;
 
-type PrevisaoCobrancaRow = {
-  pvi_data?: unknown;
+type PrevisaoRow = {
   pvi_valor?: unknown;
   pvi_ctr_id?: unknown;
   pvi_ban_id?: unknown;
   ctr_contas_receita?: MaybeArray<{ ctr_nome?: unknown; ctr_codigo?: unknown } | null>;
-  ban_bancos?: MaybeArray<{ ban_nome?: unknown } | null>;
+  ban_bancos?: MaybeArray<{ ban_nome?: unknown; ban_codigo?: unknown } | null>;
+  tpr_tipos_receita?: MaybeArray<{ tpr_id?: unknown; tpr_nome?: unknown; tpr_codigo?: unknown } | null>;
 };
 
-type RecebimentoRow = {
-  rec_data?: unknown;
+type ReceitaRow = {
   rec_valor?: unknown;
   rec_ctr_id?: unknown;
   ctr_contas_receita?: MaybeArray<{ ctr_nome?: unknown; ctr_codigo?: unknown } | null>;
 };
 
-type ItemDiaCobranca = {
-  chave: string;
-  conta: string;
-  banco: string;
+type TipoResumo = {
+  id: string;
+  nome: string;
   previsto: number;
   realizado: number;
   diferenca: number;
+  percentual: number;
 };
 
-type DiaCobranca = {
-  data: string;
-  itens: ItemDiaCobranca[];
-  totalPrevisto: number;
-  totalRealizado: number;
+type BancoResumo = {
+  id: string;
+  nome: string;
+  previsto: number;
+  realizado: number;
   diferenca: number;
+  percentual: number;
+  tipos: TipoResumo[];
 };
 
 type RelatorioCobranca = {
-  dataInicio: string;
-  dataFim: string;
-  dias: DiaCobranca[];
-  resumo: {
-    totalPrevisto: number;
-    totalRealizado: number;
+  data: string;
+  bancos: BancoResumo[];
+  totais: {
+    previsto: number;
+    realizado: number;
     diferenca: number;
   };
 };
@@ -95,42 +89,25 @@ const toString = (value: unknown, fallback = ''): string => {
   return String(value);
 };
 
+const construirChave = (id: number, nome: string, prefixo: string): string => {
+  if (Number.isFinite(id) && id > 0) {
+    return `${prefixo}-${id}`;
+  }
+  const base = nome.trim().toLowerCase().replace(/\s+/g, '-');
+  return `${prefixo}-${base || 'nao-informado'}`;
+};
+
 const arredondar = (valor: number): number => Math.round(valor * 100) / 100;
-
-const gerarIntervaloDatas = (inicio: string, fim: string): string[] => {
-  if (!inicio) {
-    return [];
-  }
-
-  const datas: string[] = [];
-  const dataInicio = new Date(`${inicio}T00:00:00`);
-  const dataFim = fim ? new Date(`${fim}T00:00:00`) : dataInicio;
-
-  const atual = new Date(dataInicio);
-  while (atual <= dataFim) {
-    datas.push(toISODate(atual));
-    atual.setDate(atual.getDate() + 1);
-  }
-
-  return datas;
-};
-
-const construirChaveConta = (id: number, nome: string): string => {
-  if (Number.isFinite(id) && id !== 0) {
-    return `conta-${id}`;
-  }
-  return `conta-${nome.trim().toLowerCase() || 'sem-identificacao'}`;
-};
 
 const RelatorioCobrancaPage: React.FC = () => {
   const hoje = useMemo(() => new Date(), []);
+  const [dataFiltro, setDataFiltro] = useState(() => toISODate(hoje));
+  const [dataReferencia, setDataReferencia] = useState(() => toISODate(hoje));
   const [usuario, setUsuario] = useState<UsuarioRow | null>(null);
   const [carregandoUsuario, setCarregandoUsuario] = useState(true);
   const [carregandoDados, setCarregandoDados] = useState(false);
-  const [erro, setErro] = useState<string | null>(null);
-  const [dataInicio, setDataInicio] = useState(() => toISODate(adicionarDias(hoje, -1)));
-  const [dataFim, setDataFim] = useState(() => toISODate(adicionarDias(hoje, 5)));
   const [relatorio, setRelatorio] = useState<RelatorioCobranca | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
 
   const [emailModalAberto, setEmailModalAberto] = useState(false);
   const [emailDestino, setEmailDestino] = useState('');
@@ -174,8 +151,8 @@ const RelatorioCobrancaPage: React.FC = () => {
   }, [carregarUsuario]);
 
   const carregarRelatorio = useCallback(
-    async (inicio: string, fim: string) => {
-      if (!usuario) {
+    async (data: string) => {
+      if (!usuario || !data) {
         return;
       }
 
@@ -183,129 +160,184 @@ const RelatorioCobrancaPage: React.FC = () => {
         setCarregandoDados(true);
         const supabase = getSupabaseClient();
 
-        const [previsoesRes, recebimentosRes] = await Promise.all([
+        const [previsoesRes, receitasRes] = await Promise.all([
           supabase
             .from('pvi_previsao_itens')
             .select(
-              'pvi_data, pvi_valor, pvi_ctr_id, pvi_ban_id, ctr_contas_receita(ctr_nome, ctr_codigo), ban_bancos(ban_nome)',
+              'pvi_valor, pvi_ctr_id, pvi_ban_id, ctr_contas_receita(ctr_nome, ctr_codigo), ban_bancos(ban_nome, ban_codigo), tpr_tipos_receita(tpr_id, tpr_nome, tpr_codigo)',
             )
             .eq('pvi_tipo', 'receita')
-            .gte('pvi_data', inicio)
-            .lte('pvi_data', fim),
+            .eq('pvi_data', data),
           supabase
             .from('rec_receitas')
-            .select('rec_data, rec_valor, rec_ctr_id, ctr_contas_receita(ctr_nome, ctr_codigo)')
-            .gte('rec_data', inicio)
-            .lte('rec_data', fim),
+            .select('rec_valor, rec_ctr_id, ctr_contas_receita(ctr_nome, ctr_codigo)')
+            .eq('rec_data', data),
         ]);
 
         if (previsoesRes.error) throw previsoesRes.error;
-        if (recebimentosRes.error) throw recebimentosRes.error;
+        if (receitasRes.error) throw receitasRes.error;
 
-        const previsoes = normalizeRelation(previsoesRes.data as MaybeArray<PrevisaoCobrancaRow>);
-        const recebimentos = normalizeRelation(recebimentosRes.data as MaybeArray<RecebimentoRow>);
+        const previsoes = normalizeRelation(previsoesRes.data as MaybeArray<PrevisaoRow>);
+        const receitas = normalizeRelation(receitasRes.data as MaybeArray<ReceitaRow>);
 
-        const datasIntervalo = gerarIntervaloDatas(inicio, fim);
-        const mapaDias = new Map<string, Map<string, { conta: string; banco: string; previsto: number; realizado: number }>>();
+        type ContaResumo = {
+          chave: string;
+          contaNome: string;
+          bancoId: string;
+          bancoNome: string;
+          tipoId: string;
+          tipoNome: string;
+          previsto: number;
+          realizado: number;
+        };
 
-        datasIntervalo.forEach((data) => {
-          mapaDias.set(data, new Map());
-        });
+        const contasMap = new Map<string, ContaResumo>();
 
         previsoes.forEach((item) => {
-          const data = toString(item.pvi_data);
-          if (!data) return;
+          const valor = arredondar(toNumber(item.pvi_valor));
+          if (valor === 0) {
+            return;
+          }
 
           const contaRel = normalizeRelation(item.ctr_contas_receita)[0];
-          const bancoRel = normalizeRelation(item.ban_bancos)[0];
           const contaNome = contaRel?.ctr_nome ? toString(contaRel.ctr_nome) : 'Conta não informada';
-          const bancoNome = bancoRel?.ban_nome ? toString(bancoRel.ban_nome) : 'Banco não informado';
           const contaId = toNumber(item.pvi_ctr_id, 0);
-          const chave = construirChaveConta(contaId, contaNome);
-          const valor = arredondar(toNumber(item.pvi_valor));
+          const contaChave = construirChave(contaId, contaNome, 'conta');
 
-          const mapaDia = mapaDias.get(data) ?? new Map();
-          const existente = mapaDia.get(chave) ?? {
-            conta: contaNome,
-            banco: bancoNome,
+          const bancoRel = normalizeRelation(item.ban_bancos)[0];
+          const bancoNome = bancoRel?.ban_nome ? toString(bancoRel.ban_nome) : 'Banco não informado';
+          const bancoIdNumero = toNumber(item.pvi_ban_id, NaN);
+          const bancoChave = construirChave(bancoIdNumero, bancoNome, 'banco');
+
+          const tipoRel = normalizeRelation(item.tpr_tipos_receita)[0];
+          const tipoNome = tipoRel?.tpr_nome ? toString(tipoRel.tpr_nome) : contaNome;
+          const tipoIdNumero = toNumber(tipoRel?.tpr_id, NaN);
+          const tipoChave = construirChave(tipoIdNumero, tipoNome, 'tipo');
+
+          const existente = contasMap.get(contaChave) ?? {
+            chave: contaChave,
+            contaNome,
+            bancoId: bancoChave,
+            bancoNome,
+            tipoId: tipoChave,
+            tipoNome,
             previsto: 0,
             realizado: 0,
           };
 
-          existente.conta = contaNome;
-          existente.banco = bancoNome;
           existente.previsto += valor;
-          mapaDia.set(chave, existente);
-          mapaDias.set(data, mapaDia);
+          existente.bancoId = bancoChave;
+          existente.bancoNome = bancoNome;
+          existente.tipoId = tipoChave;
+          existente.tipoNome = tipoNome;
+          contasMap.set(contaChave, existente);
         });
 
-        recebimentos.forEach((item) => {
-          const data = toString(item.rec_data);
-          if (!data) return;
+        receitas.forEach((item) => {
+          const valor = arredondar(toNumber(item.rec_valor));
+          if (valor === 0) {
+            return;
+          }
 
           const contaRel = normalizeRelation(item.ctr_contas_receita)[0];
           const contaNome = contaRel?.ctr_nome ? toString(contaRel.ctr_nome) : 'Conta não informada';
           const contaId = toNumber(item.rec_ctr_id, 0);
-          const chave = construirChaveConta(contaId, contaNome);
-          const valor = arredondar(toNumber(item.rec_valor));
+          const contaChave = construirChave(contaId, contaNome, 'conta');
 
-          const mapaDia = mapaDias.get(data) ?? new Map();
-          const existente = mapaDia.get(chave) ?? {
-            conta: contaNome,
-            banco: 'Banco não informado',
+          const existente = contasMap.get(contaChave);
+          if (existente) {
+            existente.realizado += valor;
+            contasMap.set(contaChave, existente);
+          }
+        });
+
+        type BancoAcumulado = {
+          nome: string;
+          previsto: number;
+          realizado: number;
+          tipos: Map<string, { nome: string; previsto: number; realizado: number }>;
+        };
+
+        const bancosMap = new Map<string, BancoAcumulado>();
+
+        contasMap.forEach((conta) => {
+          if (conta.previsto === 0 && conta.realizado === 0) {
+            return;
+          }
+
+          const banco = bancosMap.get(conta.bancoId) ?? {
+            nome: conta.bancoNome,
+            previsto: 0,
+            realizado: 0,
+            tipos: new Map(),
+          };
+
+          banco.nome = conta.bancoNome;
+          banco.previsto += conta.previsto;
+          banco.realizado += conta.realizado;
+
+          const tipo = banco.tipos.get(conta.tipoId) ?? {
+            nome: conta.tipoNome,
             previsto: 0,
             realizado: 0,
           };
 
-          existente.conta = contaNome;
-          existente.realizado += valor;
-          mapaDia.set(chave, existente);
-          mapaDias.set(data, mapaDia);
+          tipo.nome = conta.tipoNome;
+          tipo.previsto += conta.previsto;
+          tipo.realizado += conta.realizado;
+          banco.tipos.set(conta.tipoId, tipo);
+          bancosMap.set(conta.bancoId, banco);
         });
 
-        const dias: DiaCobranca[] = Array.from(mapaDias.entries())
-          .map(([data, itensMapa]) => {
-            const itens = Array.from(itensMapa.values()).map((item) => ({
-              chave: construirChaveConta(0, `${item.conta}-${item.banco}`),
-              conta: item.conta,
-              banco: item.banco,
-              previsto: arredondar(item.previsto),
-              realizado: arredondar(item.realizado),
-              diferenca: arredondar(item.realizado - item.previsto),
-            }));
+        const bancos: BancoResumo[] = Array.from(bancosMap.entries())
+          .map(([id, banco]) => {
+            const tipos: TipoResumo[] = Array.from(banco.tipos.entries())
+              .map(([tipoId, tipo]) => {
+                const previsto = arredondar(tipo.previsto);
+                const realizado = arredondar(tipo.realizado);
+                const diferenca = arredondar(realizado - previsto);
+                const percentual = previsto > 0 ? arredondar((realizado / previsto) * 100) : 0;
+                return {
+                  id: `${id}-${tipoId}`,
+                  nome: tipo.nome,
+                  previsto,
+                  realizado,
+                  diferenca,
+                  percentual,
+                };
+              })
+              .filter((tipo) => tipo.realizado !== 0)
+              .sort((a, b) => b.realizado - a.realizado);
 
-            itens.sort((a, b) => {
-              if (Math.abs(b.realizado - a.realizado) > 0.009) {
-                return b.realizado - a.realizado;
-              }
-              return a.conta.localeCompare(b.conta, 'pt-BR');
-            });
-
-            const totalPrevisto = arredondar(itens.reduce((acc, item) => acc + item.previsto, 0));
-            const totalRealizado = arredondar(itens.reduce((acc, item) => acc + item.realizado, 0));
-            const diferenca = arredondar(totalRealizado - totalPrevisto);
+            const previsto = arredondar(banco.previsto);
+            const realizado = arredondar(banco.realizado);
+            const diferenca = arredondar(realizado - previsto);
+            const percentual = previsto > 0 ? arredondar((realizado / previsto) * 100) : 0;
 
             return {
-              data,
-              itens,
-              totalPrevisto,
-              totalRealizado,
+              id,
+              nome: banco.nome,
+              previsto,
+              realizado,
               diferenca,
+              percentual,
+              tipos,
             };
           })
-          .sort((a, b) => a.data.localeCompare(b.data));
+          .filter((banco) => banco.previsto !== 0 || banco.realizado !== 0)
+          .sort((a, b) => b.realizado - a.realizado || a.nome.localeCompare(b.nome, 'pt-BR'));
 
-        const totalPrevisto = arredondar(dias.reduce((acc, dia) => acc + dia.totalPrevisto, 0));
-        const totalRealizado = arredondar(dias.reduce((acc, dia) => acc + dia.totalRealizado, 0));
+        const totalPrevisto = arredondar(bancos.reduce((acc, banco) => acc + banco.previsto, 0));
+        const totalRealizado = arredondar(bancos.reduce((acc, banco) => acc + banco.realizado, 0));
+        const diferenca = arredondar(totalRealizado - totalPrevisto);
 
         setRelatorio({
-          dataInicio: inicio,
-          dataFim: fim,
-          dias,
-          resumo: {
-            totalPrevisto,
-            totalRealizado,
-            diferenca: arredondar(totalRealizado - totalPrevisto),
+          data,
+          bancos,
+          totais: {
+            previsto: totalPrevisto,
+            realizado: totalRealizado,
+            diferenca,
           },
         });
         setErro(null);
@@ -314,7 +346,7 @@ const RelatorioCobrancaPage: React.FC = () => {
         setErro(
           traduzirErroSupabase(
             error,
-            'Não foi possível gerar o relatório de cobrança para o período selecionado.',
+            'Não foi possível gerar o relatório de cobrança para a data selecionada.',
           ),
         );
         setRelatorio(null);
@@ -329,8 +361,19 @@ const RelatorioCobrancaPage: React.FC = () => {
     if (!usuario) {
       return;
     }
-    carregarRelatorio(dataInicio, dataFim);
-  }, [usuario, dataInicio, dataFim, carregarRelatorio]);
+    carregarRelatorio(dataReferencia);
+  }, [usuario, dataReferencia, carregarRelatorio]);
+
+  const handleAplicarFiltro = useCallback(
+    (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (!dataFiltro) {
+        return;
+      }
+      setDataReferencia(dataFiltro);
+    },
+    [dataFiltro],
+  );
 
   const gerarDocumentoPdf = useCallback(() => {
     if (!relatorio) {
@@ -339,7 +382,6 @@ const RelatorioCobrancaPage: React.FC = () => {
 
     const doc = new jsPDF('portrait', 'mm', 'a4');
     const margem = 14;
-    const larguraUtil = doc.internal.pageSize.getWidth() - margem * 2;
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
@@ -347,74 +389,95 @@ const RelatorioCobrancaPage: React.FC = () => {
 
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(10);
-    doc.text(
-      `Período: ${formatarDataPt(relatorio.dataInicio)} a ${formatarDataPt(relatorio.dataFim)}`,
-      margem,
-      20,
-    );
+    doc.text(`Data: ${formatarDataPt(relatorio.data)}`, margem, 20);
 
-    const resumoTexto = `Previsto: ${formatCurrency(relatorio.resumo.totalPrevisto)}  |  Realizado: ${formatCurrency(relatorio.resumo.totalRealizado)}  |  Diferença: ${formatCurrency(relatorio.resumo.diferenca)}`;
-    doc.setFontSize(9);
-    const resumoQuebrado = doc.splitTextToSize(resumoTexto, larguraUtil);
-    doc.text(resumoQuebrado, margem, 26);
+    let posY = 26;
 
-    let posY = 26 + resumoQuebrado.length * 5;
+    const resumoBody = relatorio.bancos.length === 0
+      ? [['Nenhum banco com movimentação', '-', '-', '-', '-']]
+      : relatorio.bancos.map((banco) => [
+          banco.nome,
+          formatCurrency(banco.previsto),
+          formatCurrency(banco.realizado),
+          formatCurrency(banco.diferenca),
+          `${banco.percentual.toFixed(1).replace('.', ',')}%`,
+        ]);
 
-    const adicionarTabelaDia = (dia: DiaCobranca) => {
-      posY += 8;
+    autoTable(doc, {
+      startY: posY,
+      head: [['Banco', 'Previsto', 'Realizado', 'Diferença', '% REC']],
+      body: resumoBody,
+      styles: { fontSize: 8, halign: 'right', cellPadding: 2 },
+      headStyles: { fillColor: [31, 73, 125], textColor: 255, fontStyle: 'bold' },
+      columnStyles: { 0: { halign: 'left' } },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      margin: { left: margem, right: margem },
+    });
 
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.text(`Recebimentos - ${formatarDataPt(dia.data)}`, margem, posY);
+    posY = (doc as any).lastAutoTable.finalY + 8;
 
-      const cabecalho = [['Banco / Conta', 'Previsto', 'Realizado', 'Diferença']];
-      const corpo =
-        dia.itens.length === 0
-          ? [['Nenhum registro', '-', '-', '-']]
-          : dia.itens.map((item) => [
-              `${item.banco}\n${item.conta}`,
-              formatCurrency(item.previsto),
-              formatCurrency(item.realizado),
-              formatCurrency(item.diferenca),
-            ]);
-
-      const rodape = dia.itens.length > 0
-        ? [[
-            'Totais do dia',
-            formatCurrency(dia.totalPrevisto),
-            formatCurrency(dia.totalRealizado),
-            formatCurrency(dia.diferenca),
-          ]]
-        : undefined;
-
-      autoTable(doc, {
-        startY: posY + 2,
-        head: cabecalho,
-        body: corpo,
-        foot: rodape,
-        styles: { fontSize: 8, cellPadding: 2, halign: 'right' },
-        headStyles: { fillColor: [31, 73, 125], textColor: 255, fontStyle: 'bold' },
-        bodyStyles: { halign: 'right' },
-        alternateRowStyles: { fillColor: [248, 250, 252] },
-        columnStyles: { 0: { halign: 'left' } },
-        footStyles: { fontStyle: 'bold', fillColor: [237, 242, 247] },
-        margin: { left: margem, right: margem },
-        didDrawCell: (data) => {
-          if (data.column.index === 0 && typeof data.cell.text[0] === 'string' && data.cell.text[0].includes('\n')) {
-            data.cell.text = data.cell.text[0].split('\n');
-          }
-        },
-      });
-
-      posY = (doc as any).lastAutoTable.finalY;
-    };
-
-    relatorio.dias.forEach((dia, index) => {
-      if (index > 0 && posY > doc.internal.pageSize.getHeight() - 40) {
+    relatorio.bancos.forEach((banco, index) => {
+      if (posY > doc.internal.pageSize.getHeight() - 60) {
         doc.addPage();
         posY = 20;
       }
-      adicionarTabelaDia(dia);
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text(`Banco: ${banco.nome}`, margem, posY);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.text(
+        `Previsto: ${formatCurrency(banco.previsto)}  |  Realizado: ${formatCurrency(banco.realizado)}  |  Diferença: ${formatCurrency(banco.diferenca)}`,
+        margem,
+        posY + 5,
+      );
+
+      const tiposBody = banco.tipos.length === 0
+        ? [['Nenhum tipo com valor realizado', '-', '-', '-', '-']]
+        : banco.tipos.map((tipo) => [
+            tipo.nome,
+            formatCurrency(tipo.previsto),
+            formatCurrency(tipo.realizado),
+            formatCurrency(tipo.diferenca),
+            `${tipo.percentual.toFixed(1).replace('.', ',')}%`,
+          ]);
+
+      autoTable(doc, {
+        startY: posY + 9,
+        head: [['Tipo de Receita', 'Previsto', 'Realizado', 'Diferença', '% REC']],
+        body: tiposBody,
+        styles: { fontSize: 8, halign: 'right', cellPadding: 2 },
+        headStyles: { fillColor: [237, 242, 247], textColor: 51, fontStyle: 'bold' },
+        columnStyles: { 0: { halign: 'left' } },
+        alternateRowStyles: { fillColor: [250, 250, 250] },
+        margin: { left: margem, right: margem },
+      });
+
+      posY = (doc as any).lastAutoTable.finalY + 8;
+    });
+
+    if (posY > doc.internal.pageSize.getHeight() - 40) {
+      doc.addPage();
+      posY = 20;
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.text('Totais do Dia', margem, posY);
+
+    autoTable(doc, {
+      startY: posY + 4,
+      body: [
+        ['Receitas realizadas (previstas)', formatCurrency(relatorio.totais.realizado)],
+        ['Valor da previsão de receitas', formatCurrency(relatorio.totais.previsto)],
+        ['Diferença entre receitas e previsão', formatCurrency(relatorio.totais.diferenca)],
+      ],
+      styles: { fontSize: 9, cellPadding: 2, halign: 'right' },
+      columnStyles: { 0: { halign: 'left', fontStyle: 'bold' } },
+      theme: 'plain',
+      margin: { left: margem, right: margem },
     });
 
     return doc;
@@ -432,75 +495,97 @@ const RelatorioCobrancaPage: React.FC = () => {
       return;
     }
 
-    const nomeArquivo = `Relatorio_Cobranca_${relatorio.dataInicio.replace(/-/g, '')}_${relatorio.dataFim.replace(/-/g, '')}.pdf`;
+    const nomeArquivo = `Relatorio_Cobranca_${relatorio.data.replace(/-/g, '')}.pdf`;
     doc.save(nomeArquivo);
   }, [gerarDocumentoPdf, relatorio]);
 
-  const handleAbrirModalEmail = () => {
+  const handleAbrirModalEmail = useCallback(() => {
     setFeedbackEmail(null);
     if (!emailDestino && usuario?.usr_email) {
       setEmailDestino(usuario.usr_email);
     }
     setEmailModalAberto(true);
-  };
+  }, [emailDestino, usuario]);
 
-  const handleEnviarEmail = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!relatorio) {
-      setFeedbackEmail('Nenhum relatório disponível para envio.');
-      return;
-    }
-    if (!emailDestino.trim()) {
-      setFeedbackEmail('Informe um destinatário para continuar.');
-      return;
-    }
-
-    try {
-      setEnviandoEmail(true);
-      setFeedbackEmail(null);
-
-      const doc = gerarDocumentoPdf();
-      if (!doc) {
-        throw new Error('Não foi possível gerar o documento.');
+  const handleEnviarEmail = useCallback(
+    async (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (!relatorio) {
+        setFeedbackEmail('Nenhum relatório disponível para envio.');
+        return;
       }
-
-      const nomeArquivo = `Relatorio_Cobranca_${relatorio.dataInicio.replace(/-/g, '')}_${relatorio.dataFim.replace(/-/g, '')}.pdf`;
-      const blob = doc.output('blob');
-      const arquivo = new File([blob], nomeArquivo, { type: 'application/pdf' });
-
-      const nav = navigator as Navigator & {
-        canShare?: (data: { files?: File[] }) => boolean;
-        share?: (data: { files?: File[]; title?: string; text?: string }) => Promise<void>;
-      };
-
-      if (nav.canShare && nav.share && nav.canShare({ files: [arquivo] })) {
-        await nav.share({
-          files: [arquivo],
-          title: 'Relatório de Cobrança',
-          text: emailMensagem || 'Segue relatório de cobrança atualizado.',
-        });
-        setEmailModalAberto(false);
+      if (!emailDestino.trim()) {
+        setFeedbackEmail('Informe um destinatário para continuar.');
         return;
       }
 
-      doc.save(nomeArquivo);
+      try {
+        setEnviandoEmail(true);
+        setFeedbackEmail(null);
 
-      const assunto = encodeURIComponent('Relatório - Cobrança');
-      const corpo = encodeURIComponent(
-        `${emailMensagem || 'Segue relatório de cobrança atualizado.'}\n\nO arquivo foi baixado automaticamente e pode ser anexado ao e-mail.`,
-      );
-      window.location.href = `mailto:${encodeURIComponent(emailDestino)}?subject=${assunto}&body=${corpo}`;
+        const doc = gerarDocumentoPdf();
+        if (!doc) {
+          throw new Error('Não foi possível gerar o documento.');
+        }
 
-      setEmailModalAberto(false);
-    } catch (error) {
-      console.error('Erro ao preparar envio por e-mail:', error);
-      setFeedbackEmail('Não foi possível preparar o envio. Tente novamente em instantes.');
-    } finally {
-      setEnviandoEmail(false);
-    }
-  };
+        const nomeArquivo = `Relatorio_Cobranca_${relatorio.data.replace(/-/g, '')}.pdf`;
+        const blob = doc.output('blob');
+        const arquivo = new File([blob], nomeArquivo, { type: 'application/pdf' });
 
-  const diferencaPeriodoPositiva = relatorio ? relatorio.resumo.diferenca >= 0 : true;
+        const nav = navigator as Navigator & {
+          canShare?: (data: { files?: File[] }) => boolean;
+          share?: (data: { files?: File[]; title?: string; text?: string }) => Promise<void>;
+        };
+
+        if (nav.canShare && nav.share && nav.canShare({ files: [arquivo] })) {
+          await nav.share({
+            files: [arquivo],
+            title: 'Relatório de Cobrança',
+            text: emailMensagem || `Segue relatório de cobrança referente a ${formatarDataPt(relatorio.data)}.`,
+          });
+          setEmailModalAberto(false);
+          return;
+        }
+
+        doc.save(nomeArquivo);
+
+        const assunto = encodeURIComponent(`Relatório - Cobrança (${formatarDataPt(relatorio.data)})`);
+        const corpo = encodeURIComponent(
+          `${emailMensagem || 'Segue relatório de cobrança atualizado.'}\n\nO arquivo foi baixado automaticamente e pode ser anexado ao e-mail.`,
+        );
+        window.location.href = `mailto:${encodeURIComponent(emailDestino)}?subject=${assunto}&body=${corpo}`;
+
+        setEmailModalAberto(false);
+      } catch (error) {
+        console.error('Erro ao preparar envio por e-mail:', error);
+        setFeedbackEmail('Não foi possível preparar o envio. Tente novamente em instantes.');
+      } finally {
+        setEnviandoEmail(false);
+      }
+    },
+    [emailDestino, emailMensagem, gerarDocumentoPdf, relatorio],
+  );
+
+  const botoesAcoes = (
+    <div className="flex flex-wrap gap-2">
+      <Button
+        type="button"
+        variant="secondary"
+        onClick={handleAbrirModalEmail}
+        disabled={carregandoDados || !relatorio}
+      >
+        Enviar por e-mail
+      </Button>
+      <Button
+        type="button"
+        variant="primary"
+        onClick={handleExportPdf}
+        disabled={carregandoDados || !relatorio}
+      >
+        Exportar PDF
+      </Button>
+    </div>
+  );
 
   if (carregandoUsuario) {
     return (
@@ -517,218 +602,179 @@ const RelatorioCobrancaPage: React.FC = () => {
     <>
       <Header
         title="Relatório de Cobrança"
-        subtitle={`Período: ${formatarDataPt(dataInicio)} a ${formatarDataPt(dataFim)}`}
-        actions={
-          <div className="flex flex-col gap-2 md:flex-row md:items-center">
-            <Input
-              type="date"
-              label="Data inicial"
-              value={dataInicio}
-              onChange={(event) => {
-                const valor = event.target.value;
-                setDataInicio(valor);
-                if (valor && valor > dataFim) {
-                  setDataFim(valor);
-                }
-              }}
-            />
-            <Input
-              type="date"
-              label="Data final"
-              value={dataFim}
-              min={dataInicio}
-              onChange={(event) => setDataFim(event.target.value)}
-            />
-            <Button
-              variant="secondary"
-              onClick={handleAbrirModalEmail}
-              disabled={!relatorio || carregandoDados}
-            >
-              Enviar por e-mail
-            </Button>
-            <Button variant="primary" onClick={handleExportPdf} disabled={!relatorio || carregandoDados}>
-              Exportar PDF
-            </Button>
-          </div>
-        }
+        subtitle="Acompanhe as receitas previstas e realizadas por banco em um único dia"
+        actions={botoesAcoes}
       />
 
       <div className="page-content space-y-6">
+        <Card title="Filtros" subtitle="Defina a data desejada e gere o relatório">
+          <form className="space-y-4" onSubmit={handleAplicarFiltro}>
+            <div className="grid gap-4 md:grid-cols-3">
+              <Input
+                type="date"
+                label="Data de referência"
+                value={dataFiltro}
+                onChange={(event) => setDataFiltro(event.target.value)}
+                required
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button type="submit" variant="primary" disabled={carregandoDados}>
+                Gerar relatório
+              </Button>
+            </div>
+          </form>
+        </Card>
+
         {erro && (
-          <Card variant="danger" title="Não foi possível carregar o relatório">
-            <p className="text-sm text-error-700">{erro}</p>
+          <Card variant="danger" title="Não foi possível gerar o relatório">
+            <p className="text-sm text-gray-700">{erro}</p>
           </Card>
         )}
 
-        {carregandoDados && (
-          <div className="flex justify-center">
-            <Loading text="Preparando relatório de cobrança..." />
-          </div>
-        )}
-
-        {relatorio && !carregandoDados && (
-          <>
-            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-              <div className="bg-slate-800 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white">
-                Resumo do Período
-              </div>
-              <table className="min-w-full text-xs text-gray-600 sm:text-sm">
-                <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-600 sm:text-xs">
-                  <tr>
-                    <th className="px-3 py-2 text-left sm:px-4 sm:py-3">Descrição</th>
-                    <th className="px-3 py-2 text-right sm:px-4 sm:py-3">Previsto</th>
-                    <th className="px-3 py-2 text-right sm:px-4 sm:py-3">Realizado</th>
-                    <th className="px-3 py-2 text-right sm:px-4 sm:py-3">Diferença</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 bg-white">
-                  <tr>
-                    <td className="px-3 py-2 text-gray-700 sm:px-4 sm:py-3">Recebimentos do período</td>
-                    <td className="px-3 py-2 text-right text-gray-700 sm:px-4 sm:py-3">
-                      {formatCurrency(relatorio.resumo.totalPrevisto)}
-                    </td>
-                    <td className="px-3 py-2 text-right text-gray-700 sm:px-4 sm:py-3">
-                      {formatCurrency(relatorio.resumo.totalRealizado)}
-                    </td>
-                    <td
-                      className={`px-3 py-2 text-right font-semibold sm:px-4 sm:py-3 ${
-                        relatorio.resumo.diferenca >= 0 ? 'text-success-600' : 'text-error-600'
-                      }`}
-                    >
-                      {formatCurrency(relatorio.resumo.diferenca)}
-                    </td>
-                  </tr>
-                  <tr
-                    className={`${
-                      diferencaPeriodoPositiva ? 'bg-success-50 text-success-800' : 'bg-error-50 text-error-800'
-                    } font-semibold`}
-                  >
-                    <td className="px-3 py-2 sm:px-4 sm:py-3" colSpan={3}>
-                      Diferença entre realizado e previsto
-                    </td>
-                    <td className="px-3 py-2 text-right sm:px-4 sm:py-3">
-                      {formatCurrency(relatorio.resumo.diferenca)}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+        {carregandoDados ? (
+          <Card>
+            <div className="flex h-48 items-center justify-center">
+              <Loading text="Consolidando informações da cobrança..." />
             </div>
-
-            <div className="space-y-5">
-              {relatorio.dias.map((dia) => {
-                const diferencaPositiva = dia.diferenca >= 0;
-                return (
-                  <Card
-                    key={dia.data}
-                    variant="primary"
-                    title={`Recebimentos - ${formatarDataPt(dia.data)}`}
-                    subtitle={`Diferença no dia: ${formatCurrency(dia.diferenca)}`}
-                  >
-                    <div className="mb-4 overflow-hidden rounded-lg border border-gray-200">
-                      <table className="min-w-full text-xs text-gray-600 sm:text-sm">
-                        <thead className="bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-600 sm:text-xs">
-                          <tr>
-                            <th className="px-3 py-2 text-left sm:px-4 sm:py-3">Descrição</th>
-                            <th className="px-3 py-2 text-right sm:px-4 sm:py-3">Previsto</th>
-                            <th className="px-3 py-2 text-right sm:px-4 sm:py-3">Realizado</th>
-                            <th className="px-3 py-2 text-right sm:px-4 sm:py-3">Diferença</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 bg-white">
-                          <tr>
-                            <td className="px-3 py-2 text-gray-700 sm:px-4 sm:py-3">Recebimentos do dia</td>
-                            <td className="px-3 py-2 text-right text-gray-700 sm:px-4 sm:py-3">
-                              {formatCurrency(dia.totalPrevisto)}
-                            </td>
-                            <td className="px-3 py-2 text-right text-gray-700 sm:px-4 sm:py-3">
-                              {formatCurrency(dia.totalRealizado)}
-                            </td>
-                            <td
-                              className={`px-3 py-2 text-right font-semibold sm:px-4 sm:py-3 ${
-                                diferencaPositiva ? 'text-success-600' : 'text-error-600'
-                              }`}
-                            >
-                              {formatCurrency(dia.diferenca)}
-                            </td>
-                          </tr>
-                          <tr
-                            className={`${
-                              diferencaPositiva ? 'bg-success-50 text-success-800' : 'bg-error-50 text-error-800'
-                            } font-semibold`}
+          </Card>
+        ) : relatorio ? (
+          <>
+            <Card
+              title={`Resumo por Banco (${formatarDataPt(relatorio.data)})`}
+              subtitle="Comparativo entre valores previstos e realizados para cada banco com movimentação"
+            >
+              {relatorio.bancos.length === 0 ? (
+                <p className="text-sm text-gray-500">Nenhum banco apresentou movimentação na data selecionada.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm text-gray-700">
+                    <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-semibold">Banco</th>
+                        <th className="px-4 py-3 text-right font-semibold">Previsto</th>
+                        <th className="px-4 py-3 text-right font-semibold">Realizado</th>
+                        <th className="px-4 py-3 text-right font-semibold">Diferença</th>
+                        <th className="px-4 py-3 text-right font-semibold">% REC</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 bg-white">
+                      {relatorio.bancos.map((banco) => (
+                        <tr key={banco.id}>
+                          <td className="px-4 py-3 font-medium text-gray-800">{banco.nome}</td>
+                          <td className="px-4 py-3 text-right text-gray-700">{formatCurrency(banco.previsto)}</td>
+                          <td className="px-4 py-3 text-right text-gray-700">{formatCurrency(banco.realizado)}</td>
+                          <td
+                            className={`px-4 py-3 text-right font-semibold ${
+                              banco.diferenca >= 0 ? 'text-success-600' : 'text-error-600'
+                            }`}
                           >
-                            <td className="px-3 py-2 sm:px-4 sm:py-3" colSpan={3}>
-                              Diferença entre realizado e previsto
-                            </td>
-                            <td className="px-3 py-2 text-right sm:px-4 sm:py-3">{formatCurrency(dia.diferenca)}</td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
+                            {formatCurrency(banco.diferenca)}
+                          </td>
+                          <td className="px-4 py-3 text-right text-gray-700">
+                            {banco.percentual.toFixed(1).replace('.', ',')}%
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-gray-50 text-sm font-semibold text-gray-700">
+                      <tr>
+                        <td className="px-4 py-3 text-right">Totais</td>
+                        <td className="px-4 py-3 text-right">{formatCurrency(relatorio.totais.previsto)}</td>
+                        <td className="px-4 py-3 text-right">{formatCurrency(relatorio.totais.realizado)}</td>
+                        <td
+                          className={`px-4 py-3 text-right ${
+                            relatorio.totais.diferenca >= 0 ? 'text-success-600' : 'text-error-600'
+                          }`}
+                        >
+                          {formatCurrency(relatorio.totais.diferenca)}
+                        </td>
+                        <td className="px-4 py-3 text-right">-</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </Card>
 
-                    <div className="overflow-x-auto rounded-lg border border-gray-200">
-                      <table className="min-w-full divide-y divide-gray-200 text-sm">
-                        <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                          <tr>
-                            <th className="px-4 py-3 text-left font-semibold">Banco / Conta</th>
-                            <th className="px-4 py-3 text-right font-semibold">Previsto</th>
-                            <th className="px-4 py-3 text-right font-semibold">Realizado</th>
-                            <th className="px-4 py-3 text-right font-semibold">Diferença</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 bg-white">
-                          {dia.itens.length === 0 ? (
+            {relatorio.bancos.length > 0 && (
+              <div className="grid gap-6 lg:grid-cols-2">
+                {relatorio.bancos.map((banco) => (
+                  <Card
+                    key={banco.id}
+                    title={banco.nome}
+                    subtitle="Distribuição das receitas realizadas por tipo"
+                  >
+                    {banco.tipos.length === 0 ? (
+                      <p className="text-sm text-gray-500">
+                        Nenhuma receita realizada para este banco na data selecionada.
+                      </p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full text-sm text-gray-700">
+                          <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
                             <tr>
-                              <td colSpan={4} className="px-4 py-6 text-center text-sm text-gray-500">
-                                Nenhum recebimento registrado para este dia.
-                              </td>
+                              <th className="px-4 py-3 text-left font-semibold">Tipo de Receita</th>
+                              <th className="px-4 py-3 text-right font-semibold">Previsto</th>
+                              <th className="px-4 py-3 text-right font-semibold">Realizado</th>
+                              <th className="px-4 py-3 text-right font-semibold">Diferença</th>
+                              <th className="px-4 py-3 text-right font-semibold">% REC</th>
                             </tr>
-                          ) : (
-                            dia.itens.map((item) => (
-                              <tr key={item.chave}>
-                                <td className="px-4 py-3">
-                                  <div className="font-medium text-gray-800">{item.banco}</div>
-                                  <div className="text-xs text-gray-500">{item.conta}</div>
-                                </td>
-                                <td className="px-4 py-3 text-right text-gray-700">{formatCurrency(item.previsto)}</td>
-                                <td className="px-4 py-3 text-right text-gray-700">{formatCurrency(item.realizado)}</td>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100 bg-white">
+                            {banco.tipos.map((tipo) => (
+                              <tr key={tipo.id}>
+                                <td className="px-4 py-3 font-medium text-gray-800">{tipo.nome}</td>
+                                <td className="px-4 py-3 text-right text-gray-700">{formatCurrency(tipo.previsto)}</td>
+                                <td className="px-4 py-3 text-right text-gray-700">{formatCurrency(tipo.realizado)}</td>
                                 <td
                                   className={`px-4 py-3 text-right font-semibold ${
-                                    item.diferenca >= 0 ? 'text-success-600' : 'text-error-600'
+                                    tipo.diferenca >= 0 ? 'text-success-600' : 'text-error-600'
                                   }`}
                                 >
-                                  {formatCurrency(item.diferenca)}
+                                  {formatCurrency(tipo.diferenca)}
+                                </td>
+                                <td className="px-4 py-3 text-right text-gray-700">
+                                  {tipo.percentual.toFixed(1).replace('.', ',')}%
                                 </td>
                               </tr>
-                            ))
-                          )}
-                        </tbody>
-                        <tfoot className="bg-gray-50 text-sm font-semibold text-gray-700">
-                          <tr>
-                            <td className="px-4 py-3 text-right">Totais do dia</td>
-                            <td className="px-4 py-3 text-right">{formatCurrency(dia.totalPrevisto)}</td>
-                            <td className="px-4 py-3 text-right">{formatCurrency(dia.totalRealizado)}</td>
-                            <td
-                              className={`px-4 py-3 text-right ${
-                                diferencaPositiva ? 'text-success-600' : 'text-error-600'
-                              }`}
-                            >
-                              {formatCurrency(dia.diferenca)}
-                            </td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </Card>
-                );
-              })}
-            </div>
-          </>
-        )}
+                ))}
+              </div>
+            )}
 
-        {!relatorio && !carregandoDados && !erro && (
-          <Card variant="default" title="Nenhum dado encontrado">
+            <Card title="Totais consolidados" subtitle="Resumo final das receitas previstas e realizadas no dia">
+              <div className="space-y-3 text-sm text-gray-700">
+                <div className="flex items-center justify-between">
+                  <span>Receitas realizadas (apenas previstas)</span>
+                  <span className="font-semibold text-success-700">{formatCurrency(relatorio.totais.realizado)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Valor da previsão de receitas</span>
+                  <span className="font-semibold">{formatCurrency(relatorio.totais.previsto)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Diferença entre receitas e previsão</span>
+                  <span
+                    className={`font-semibold ${
+                      relatorio.totais.diferenca >= 0 ? 'text-success-700' : 'text-error-600'
+                    }`}
+                  >
+                    {formatCurrency(relatorio.totais.diferenca)}
+                  </span>
+                </div>
+              </div>
+            </Card>
+          </>
+        ) : (
+          <Card title="Nenhum dado encontrado">
             <p className="text-sm text-gray-600">
-              Não localizamos informações para o período selecionado. Ajuste as datas e tente novamente.
+              Não localizamos informações para a data selecionada. Ajuste o filtro e tente novamente.
             </p>
           </Card>
         )}
@@ -782,8 +828,7 @@ const RelatorioCobrancaPage: React.FC = () => {
             rows={4}
           />
           <p className="text-xs text-gray-500">
-            O relatório será gerado em PDF. Se o navegador não suportar compartilhamento direto, o arquivo será baixado
-            automaticamente para anexar ao e-mail.
+            O relatório será gerado em PDF. Se o navegador não suportar compartilhamento direto, o arquivo será baixado automaticamente para anexar ao e-mail.
           </p>
           {feedbackEmail && <p className="text-sm text-error-600">{feedbackEmail}</p>}
         </form>

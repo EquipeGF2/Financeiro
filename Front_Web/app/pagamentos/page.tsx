@@ -771,7 +771,7 @@ const PagamentosPage: React.FC = () => {
                 title="Evolução Diária por Área de Despesa (Realizado)"
                 subtitle="Selecione as áreas para comparar a tendência diária"
               >
-                {linhasAreas.length === 0 ? (
+                {chavesAreas.length === 0 ? (
                   <p className="text-sm text-gray-500">Nenhuma série disponível para o período informado.</p>
                 ) : (
                   <div className="space-y-4">
@@ -792,10 +792,16 @@ const PagamentosPage: React.FC = () => {
                         </Button>
                       ))}
                     </div>
-                    <SimpleLineChart
-                      labels={intervaloDatas.map((data) => formatarDataCurta(data))}
-                      series={linhasAreas}
-                    />
+                    {linhasAreas.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
+                        Selecione ao menos uma área para visualizar a evolução diária.
+                      </div>
+                    ) : (
+                      <SimpleLineChart
+                        labels={intervaloDatas.map((data) => formatarDataCurta(data))}
+                        series={linhasAreas}
+                      />
+                    )}
                   </div>
                 )}
               </Card>
@@ -805,7 +811,7 @@ const PagamentosPage: React.FC = () => {
               title="Evolução Diária de Saldo por Banco (Realizado)"
               subtitle="Ative ou desative bancos para ajustar a visualização"
             >
-              {linhasBancos.length === 0 ? (
+              {chavesBancos.length === 0 ? (
                 <p className="text-sm text-gray-500">Nenhum saldo encontrado para os bancos no período.</p>
               ) : (
                 <div className="space-y-4">
@@ -826,10 +832,16 @@ const PagamentosPage: React.FC = () => {
                       </Button>
                     ))}
                   </div>
-                  <SimpleLineChart
-                    labels={intervaloDatas.map((data) => formatarDataCurta(data))}
-                    series={linhasBancos}
-                  />
+                  {linhasBancos.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
+                      Selecione ao menos um banco para visualizar a evolução dos saldos.
+                    </div>
+                  ) : (
+                    <SimpleLineChart
+                      labels={intervaloDatas.map((data) => formatarDataCurta(data))}
+                      series={linhasBancos}
+                    />
+                  )}
                 </div>
               )}
             </Card>

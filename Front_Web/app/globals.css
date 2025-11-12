@@ -102,15 +102,20 @@ select {
   border-right: 1px solid var(--color-gray-200);
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow: hidden;
   box-shadow: var(--shadow-sm);
 }
 
-.sidebar::-webkit-scrollbar {
+.sidebar__scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.sidebar__scroll::-webkit-scrollbar {
   width: 6px;
 }
 
-.sidebar::-webkit-scrollbar-thumb {
+.sidebar__scroll::-webkit-scrollbar-thumb {
   background: var(--color-gray-200);
   border-radius: 9999px;
 }
