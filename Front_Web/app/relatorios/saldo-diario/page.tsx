@@ -82,6 +82,7 @@ type RenderTabelaOptions = {
   totalLabel?: string;
   showTotals?: boolean;
   layout?: 'comparativo' | 'realizado';
+  inverterCores?: boolean;
 };
 
 type RelatorioSaldoDiario = {
@@ -496,6 +497,7 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
       const accent = options.accent ?? 'azul';
       const totalLabel = options.totalLabel ?? 'Totais';
       const showTotals = options.showTotals ?? layout === 'comparativo';
+      const inverterCores = options.inverterCores ?? false;
       const sectionClass = tabelaAccentClassNames[accent] ?? tabelaAccentClassNames.azul;
 
       const linhasComparativas =
@@ -561,7 +563,11 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
                     <td>{linha.titulo}</td>
                     <td>{formatCurrency(linha.previsto)}</td>
                     <td>{formatCurrency(linha.realizado)}</td>
-                    <td className={linha.desvio >= 0 ? 'report-value--positivo' : 'report-value--negativo'}>
+                    <td className={
+                      inverterCores
+                        ? (linha.desvio >= 0 ? 'report-value--negativo' : 'report-value--positivo')
+                        : (linha.desvio >= 0 ? 'report-value--positivo' : 'report-value--negativo')
+                    }>
                       {formatCurrency(linha.desvio)}
                     </td>
                     <td>{formatarPercentual(linha.percentual)}</td>
@@ -583,7 +589,11 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
                     <td>{totalLabel}</td>
                     <td>{formatCurrency(totalPrevisto)}</td>
                     <td>{formatCurrency(totalRealizado)}</td>
-                    <td className={totalDesvio >= 0 ? 'report-value--positivo' : 'report-value--negativo'}>
+                    <td className={
+                      inverterCores
+                        ? (totalDesvio >= 0 ? 'report-value--negativo' : 'report-value--positivo')
+                        : (totalDesvio >= 0 ? 'report-value--positivo' : 'report-value--negativo')
+                    }>
                       {formatCurrency(totalDesvio)}
                     </td>
                     <td>{formatarPercentual(totalPercentual)}</td>
@@ -961,6 +971,7 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
               {renderTabelaComparativa('Gastos por Área', relatorio.gastos, {
                 accent: 'amarelo',
                 totalLabel: 'Total de Gastos',
+                inverterCores: true,
               })}
               {renderTabelaComparativa('Receitas por Categoria', relatorio.receitas, {
                 accent: 'verde',
@@ -968,12 +979,14 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
               })}
             </div>
 
-            {renderTabelaComparativa('Resultado de Saldo de Caixa do Dia', linhasResultadoCaixa, {
-              accent: 'laranja',
-              showTotals: false,
-            })}
+            <div className="mt-10">
+              {renderTabelaComparativa('Resultado de Saldo de Caixa do Dia', linhasResultadoCaixa, {
+                accent: 'laranja',
+                showTotals: false,
+              })}
+            </div>
 
-            <div className="report-grid report-grid--two">
+            <div className="report-grid report-grid--two mt-10">
               {renderTabelaComparativa('Resumo Geral', linhasResumoGeral, {
                 accent: 'azul',
                 layout: 'realizado',

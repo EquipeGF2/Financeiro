@@ -407,9 +407,7 @@ const RelatorioCobrancaPage: React.FC = () => {
     carregarRelatorio(dataReferencia);
   }, [usuario, dataReferencia, carregarRelatorio]);
 
-  const handleAplicarFiltro = useCallback(
-    (event: React.FormEvent<HTMLFormElement>) => {
-      event.preventDefault();
+  const handleAplicarFiltro = useCallback(() => {
       if (!dataFiltro) {
         return;
       }
@@ -610,7 +608,22 @@ const RelatorioCobrancaPage: React.FC = () => {
   );
 
   const botoesAcoes = (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap items-center gap-3">
+      <Input
+        type="date"
+        label="Data"
+        value={dataFiltro}
+        onChange={(event) => setDataFiltro(event.target.value)}
+        className="w-40"
+      />
+      <Button
+        type="button"
+        variant="primary"
+        onClick={handleAplicarFiltro}
+        disabled={carregandoDados}
+      >
+        Gerar relatório
+      </Button>
       <Button
         type="button"
         variant="secondary"
@@ -650,25 +663,6 @@ const RelatorioCobrancaPage: React.FC = () => {
       />
 
       <div className="page-content space-y-6">
-        <Card title="Filtros" subtitle="Defina a data desejada e gere o relatório">
-          <form className="space-y-4" onSubmit={handleAplicarFiltro}>
-            <div className="grid gap-4 md:grid-cols-3">
-              <Input
-                type="date"
-                label="Data de referência"
-                value={dataFiltro}
-                onChange={(event) => setDataFiltro(event.target.value)}
-                required
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button type="submit" variant="primary" disabled={carregandoDados}>
-                Gerar relatório
-              </Button>
-            </div>
-          </form>
-        </Card>
-
         {erro && (
           <Card variant="danger" title="Não foi possível gerar o relatório">
             <p className="text-sm text-gray-700">{erro}</p>

@@ -1735,7 +1735,7 @@ const SaldoDiarioPage: React.FC = () => {
                                         <span className="font-semibold text-primary-700">
                                           {formatCurrency(registro.valor)}
                                         </span>
-                                        <div className="flex flex-col gap-1">
+                                        <div className="flex flex-row gap-2">
                                           <Button
                                             type="button"
                                             variant="secondary"
@@ -1927,7 +1927,7 @@ const SaldoDiarioPage: React.FC = () => {
                                         <span className="font-semibold text-error-700">
                                           {formatCurrency(registro.valor)}
                                         </span>
-                                        <div className="flex flex-col gap-1">
+                                        <div className="flex flex-row gap-2">
                                           <Button
                                             type="button"
                                             variant="secondary"
@@ -2119,7 +2119,7 @@ const SaldoDiarioPage: React.FC = () => {
                                         <span className="font-semibold text-success-700">
                                           {formatCurrency(registro.valor)}
                                         </span>
-                                        <div className="flex flex-col gap-1">
+                                        <div className="flex flex-row gap-2">
                                           <Button
                                             type="button"
                                             variant="secondary"
@@ -2316,7 +2316,7 @@ const SaldoDiarioPage: React.FC = () => {
                                         >
                                           {formatCurrency(registro.valor)}
                                         </span>
-                                        <div className="flex flex-col gap-1">
+                                        <div className="flex flex-row gap-2">
                                           <Button
                                             type="button"
                                             variant="secondary"
