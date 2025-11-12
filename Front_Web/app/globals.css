@@ -286,6 +286,8 @@ select {
 
 .report-section__table tfoot td {
   font-weight: 700;
+  background: transparent;
+  color: inherit;
 }
 
 .report-section__empty-cell {
@@ -314,10 +316,6 @@ select {
   color: #1f497d;
 }
 
-.report-section--azul .report-section__table tfoot {
-  background: #eef3fb;
-  color: #1f497d;
-}
 
 .report-section--verde .report-section__header {
   background: #1b5e20;
@@ -328,10 +326,6 @@ select {
   color: #1b5e20;
 }
 
-.report-section--verde .report-section__table tfoot {
-  background: #ebf7ef;
-  color: #1b5e20;
-}
 
 .report-section--amarelo .report-section__header {
   background: #b7791f;
@@ -342,10 +336,6 @@ select {
   color: #92400e;
 }
 
-.report-section--amarelo .report-section__table tfoot {
-  background: #fef3c7;
-  color: #92400e;
-}
 
 .report-section--laranja .report-section__header {
   background: #9c4221;
@@ -356,10 +346,6 @@ select {
   color: #9c4221;
 }
 
-.report-section--laranja .report-section__table tfoot {
-  background: #fce9dc;
-  color: #9c4221;
-}
 
 .report-section--cinza .report-section__header {
   background: #4b5563;
@@ -370,10 +356,6 @@ select {
   color: var(--color-gray-900);
 }
 
-.report-section--cinza .report-section__table tfoot {
-  background: #f3f4f6;
-  color: var(--color-gray-900);
-}
 
 @media print {
   .report-wrapper {

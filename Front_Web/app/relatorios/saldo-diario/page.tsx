@@ -596,11 +596,6 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
         titulo: 'Saldo Final do Dia',
         realizado: resumo.saldoFinalRealizado,
       },
-      {
-        chave: 'saldo-bancos',
-        titulo: 'Saldo em Bancos',
-        realizado: resumo.bancosRealizados,
-      },
     ];
   }, [relatorio]);
 
@@ -723,7 +718,7 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
         alternateRowStyles: { fillColor: [248, 250, 252] },
         columnStyles: { 0: { halign: 'left' } },
         margin: { left: margemHorizontal, right: margemHorizontal },
-        footStyles: { fontStyle: 'bold', fillColor: [237, 242, 247] },
+        footStyles: { fontStyle: 'bold', fillColor: [255, 255, 255], textColor: [33, 37, 41] },
       });
 
       posicaoAtual = (doc as any).lastAutoTable.finalY;
@@ -747,14 +742,14 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
     adicionarTabela('Resumo Geral', linhasResumoGeral, {
       accent: 'azul',
       layout: 'realizado',
-      totalLabel: 'Total Geral',
-      showTotals: true,
+      showTotals: false,
     });
 
     adicionarTabela('Saldos Bancários', relatorio.bancos, {
       accent: 'cinza',
       layout: 'realizado',
       totalLabel: 'Total em Bancos',
+      showTotals: true,
     });
 
     return doc;
@@ -917,16 +912,16 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
             })}
 
             <div className="report-grid report-grid--two">
-            {renderTabelaComparativa('Resumo Geral', linhasResumoGeral, {
-              accent: 'azul',
-              layout: 'realizado',
-              showTotals: true,
-              totalLabel: 'Total Geral',
-            })}
+              {renderTabelaComparativa('Resumo Geral', linhasResumoGeral, {
+                accent: 'azul',
+                layout: 'realizado',
+                showTotals: false,
+              })}
               {renderTabelaComparativa('Saldos Bancários', relatorio.bancos, {
                 accent: 'cinza',
                 layout: 'realizado',
                 totalLabel: 'Total em Bancos',
+                showTotals: true,
               })}
             </div>
           </div>

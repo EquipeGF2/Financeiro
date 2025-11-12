@@ -59,6 +59,20 @@ const RelatoriosHomePage: React.FC = () => {
               </Link>
             </div>
           </Card>
+          <Card
+            title="Auditoria de Saldos"
+            subtitle="Concilie o saldo registrado na previsão com os saldos diários informados pelos bancos."
+            variant="danger"
+          >
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Identifique divergências entre os saldos informados e a consolidação diária de cada banco.
+              </p>
+              <Link href="/auditoria/saldos-diarios" className="inline-block">
+                <Button variant="primary">Abrir auditoria</Button>
+              </Link>
+            </div>
+          </Card>
         </div>
       </div>
     </>
