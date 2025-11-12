@@ -44,6 +44,21 @@ const RelatoriosHomePage: React.FC = () => {
               </Link>
             </div>
           </Card>
+          <Card
+            title="Cobrança"
+            subtitle="Visualize o acompanhamento diário de recebimentos previstos versus realizados por banco e conta."
+            variant="primary"
+          >
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Gere um demonstrativo das cobranças por período, com totais diários e totais consolidados, pronto para exportar
+                em PDF ou compartilhar por e-mail.
+              </p>
+              <Link href="/relatorios/cobranca" className="inline-block">
+                <Button variant="primary">Abrir relatório</Button>
+              </Link>
+            </div>
+          </Card>
         </div>
       </div>
     </>
