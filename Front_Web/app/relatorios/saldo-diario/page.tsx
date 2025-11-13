@@ -311,7 +311,7 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
         const supabase = getSupabaseClient();
 
         // Todos os usuários podem visualizar todos os dados
-        const [previsoesRes, gastosRes, receitasRes, saldosRes] = await Promise.all([
+        const [previsoesRes, gastosRes, receitasRes, saldosRes, saldosAnterioresRes] = await Promise.all([
           supabase
             .from('pvi_previsao_itens')
             .select(
@@ -330,17 +330,35 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
             .from('sdb_saldo_banco')
             .select('sdb_saldo, sdb_ban_id, ban_bancos(ban_nome, ban_numero_conta)')
             .eq('sdb_data', data),
+          // Buscar saldos bancários da última data anterior disponível
+          supabase
+            .from('sdb_saldo_banco')
+            .select('sdb_data, sdb_saldo')
+            .lt('sdb_data', data)
+            .order('sdb_data', { ascending: false })
+            .limit(100), // Pegamos vários registros para encontrar a última data completa
         ]);
 
         if (previsoesRes.error) throw previsoesRes.error;
         if (gastosRes.error) throw gastosRes.error;
         if (receitasRes.error) throw receitasRes.error;
         if (saldosRes.error) throw saldosRes.error;
+        if (saldosAnterioresRes.error) throw saldosAnterioresRes.error;
 
         const previsoes = normalizeRelation(previsoesRes.data as MaybeArray<PrevisaoRow>);
         const pagamentosArea = (gastosRes.data as MaybeArray<PagamentoAreaRow>) ?? [];
         const receitas = (receitasRes.data as MaybeArray<ReceitaRow>) ?? [];
         const saldosBancarios = (saldosRes.data as MaybeArray<SaldoBancoRow>) ?? [];
+        const saldosAnterioresData = (saldosAnterioresRes.data as any[]) ?? [];
+
+        // Calcular saldo anterior: pegar a última data disponível e somar todos os saldos
+        let saldoAnteriorCalculado = 0;
+        if (saldosAnterioresData.length > 0) {
+          const ultimaData = saldosAnterioresData[0].sdb_data;
+          saldoAnteriorCalculado = saldosAnterioresData
+            .filter((s: any) => s.sdb_data === ultimaData)
+            .reduce((acc: number, s: any) => acc + arredondar(toNumber(s.sdb_saldo)), 0);
+        }
 
         const mapaGastos = new Map<string, { titulo: string; previsto: number; realizado: number }>();
         const mapaReceitas = new Map<string, { titulo: string; previsto: number; realizado: number }>();
@@ -445,7 +463,8 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
         }
 
         const saldoFinalRealizado = arredondar(totalBancosRealizados);
-        const saldoInicialRealizado = arredondar(saldoFinalRealizado - resultadoRealizado);
+        // Usar o saldo anterior baseado na última data disponível nos registros bancários
+        const saldoInicialRealizado = arredondar(saldoAnteriorCalculado);
 
         setRelatorio({
           data,
