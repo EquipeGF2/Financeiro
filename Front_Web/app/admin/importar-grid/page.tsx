@@ -63,10 +63,11 @@ const BANCOS: OpcaoMapeamento[] = [
   { id: 8, nome: 'Sicredi' },
 ];
 
-const TIPOS_RECEITA: OpcaoMapeamento[] = [
-  { id: 1, nome: 'Receitas em Títulos/Boletos' },
-  { id: 2, nome: 'Receitas em Depósitos/PIX' },
-  { id: 3, nome: 'Outras Receitas' },
+const CONTAS_RECEITA: OpcaoMapeamento[] = [
+  { id: 1, nome: 'Títulos/Boletos (Conta 200)' },
+  { id: 2, nome: 'Depósitos/PIX (Conta 201)' },
+  { id: 3, nome: 'Outras Receitas (Conta 202)' },
+  { id: 4, nome: 'Resgate Aplicação (Conta 203)' },
 ];
 
 export default function ImportarDadosGrid() {
@@ -242,7 +243,7 @@ export default function ImportarDadosGrid() {
   const obterOpcoesMapeamento = (tipo: string): OpcaoMapeamento[] => {
     if (tipo === 'pagamento_area' || tipo === 'previsao_area') return AREAS;
     if (tipo === 'saldo_banco' || tipo === 'pagamento_banco') return BANCOS;
-    if (tipo === 'receita_tipo' || tipo === 'previsao_receita') return TIPOS_RECEITA;
+    if (tipo === 'receita_tipo' || tipo === 'previsao_receita') return CONTAS_RECEITA;
     return [];
   };
 
@@ -455,7 +456,7 @@ export default function ImportarDadosGrid() {
                       ))
                     }
                     {linhas.some(l => l.incluir && (l.tipoImportacao === 'receita_tipo' || l.tipoImportacao === 'previsao_receita')) &&
-                      TIPOS_RECEITA.map(opt => (
+                      CONTAS_RECEITA.map(opt => (
                         <option key={opt.id} value={opt.id}>[{opt.id}] {opt.nome}</option>
                       ))
                     }
