@@ -30,7 +30,7 @@ type PrevisaoRow = {
   pvi_ctr_id?: unknown;
   pvi_ban_id?: unknown;
   ctr_contas_receita?: MaybeArray<{ ctr_nome?: unknown; ctr_codigo?: unknown } | null>;
-  ban_bancos?: MaybeArray<{ ban_nome?: unknown; ban_codigo?: unknown } | null>;
+  ban_bancos?: MaybeArray<{ ban_id?: unknown; ban_nome?: unknown; ban_codigo?: unknown } | null>;
   tpr_tipos_receita?: MaybeArray<{ tpr_id?: unknown; tpr_nome?: unknown; tpr_codigo?: unknown } | null>;
 };
 
@@ -39,7 +39,7 @@ type CobrancaRow = {
   cob_ctr_id?: unknown;
   cob_ban_id?: unknown;
   ctr_contas_receita?: MaybeArray<{ ctr_nome?: unknown; ctr_codigo?: unknown } | null>;
-  ban_bancos?: MaybeArray<{ ban_nome?: unknown; ban_codigo?: unknown } | null>;
+  ban_bancos?: MaybeArray<{ ban_id?: unknown; ban_nome?: unknown; ban_codigo?: unknown } | null>;
   tpr_tipos_receita?: MaybeArray<{ tpr_id?: unknown; tpr_nome?: unknown; tpr_codigo?: unknown } | null>;
 };
 
@@ -185,13 +185,13 @@ const RelatorioCobrancaPage: React.FC = () => {
           supabase
             .from('pvi_previsao_itens')
             .select(
-              'pvi_valor, pvi_ctr_id, pvi_ban_id, ctr_contas_receita(ctr_nome, ctr_codigo), ban_bancos!pvi_ban_id(ban_nome, ban_codigo), tpr_tipos_receita(tpr_id, tpr_nome, tpr_codigo)',
+              'pvi_valor, pvi_ctr_id, pvi_ban_id, ctr_contas_receita(ctr_nome, ctr_codigo), ban_bancos(ban_id, ban_nome, ban_codigo), tpr_tipos_receita(tpr_id, tpr_nome, tpr_codigo)',
             )
             .eq('pvi_tipo', 'receita')
             .eq('pvi_data', data),
           supabase
             .from('cob_cobrancas')
-            .select('cob_valor, cob_ctr_id, cob_ban_id, ctr_contas_receita(ctr_nome, ctr_codigo), ban_bancos!cob_ban_id(ban_nome, ban_codigo), tpr_tipos_receita(tpr_id, tpr_nome, tpr_codigo)')
+            .select('cob_valor, cob_ctr_id, cob_ban_id, ctr_contas_receita(ctr_nome, ctr_codigo), ban_bancos(ban_id, ban_nome, ban_codigo), tpr_tipos_receita(tpr_id, tpr_nome, tpr_codigo)')
             .eq('cob_data', data),
         ]);
 
@@ -227,7 +227,8 @@ const RelatorioCobrancaPage: React.FC = () => {
 
           const bancoRel = normalizeRelation(item.ban_bancos)[0];
           const bancoNome = bancoRel?.ban_nome ? toString(bancoRel.ban_nome) : 'Banco não informado';
-          const bancoIdNumero = toNumber(item.pvi_ban_id, NaN);
+          // Prioriza o ban_id do registro relacionado, depois usa pvi_ban_id
+          const bancoIdNumero = bancoRel?.ban_id ? toNumber(bancoRel.ban_id) : toNumber(item.pvi_ban_id, NaN);
           const bancoChave = construirChave(bancoIdNumero, bancoNome, 'banco');
 
           const tipoRel = normalizeRelation(item.tpr_tipos_receita)[0];
@@ -267,7 +268,8 @@ const RelatorioCobrancaPage: React.FC = () => {
 
           const bancoRel = normalizeRelation(item.ban_bancos)[0];
           const bancoNome = bancoRel?.ban_nome ? toString(bancoRel.ban_nome) : 'Banco não informado';
-          const bancoIdNumero = toNumber(item.cob_ban_id, NaN);
+          // Prioriza o ban_id do registro relacionado, depois usa cob_ban_id
+          const bancoIdNumero = bancoRel?.ban_id ? toNumber(bancoRel.ban_id) : toNumber(item.cob_ban_id, NaN);
           const bancoChave = construirChave(bancoIdNumero, bancoNome, 'banco');
 
           const tipoRel = normalizeRelation(item.tpr_tipos_receita)[0];
