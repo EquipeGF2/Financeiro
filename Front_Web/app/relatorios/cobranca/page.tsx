@@ -62,13 +62,31 @@ type BancoResumo = {
   tipos: TipoResumo[];
 };
 
+type CategoriaResumo = {
+  receitaPrevista: number;
+  outrasReceitas: number;
+  total: number;
+};
+
+type BancoCategorizado = {
+  id: string;
+  nome: string;
+  titulos: CategoriaResumo;
+  depositos: CategoriaResumo;
+};
+
 type RelatorioCobranca = {
   data: string;
   bancos: BancoResumo[];
+  bancosCategorizado: BancoCategorizado[];
   totais: {
     previsto: number;
     realizado: number;
     diferenca: number;
+    titulosTotal: number;
+    depositosTotal: number;
+    percentualTitulos: number;
+    percentualDepositos: number;
   };
 };
 
@@ -353,18 +371,98 @@ const RelatorioCobrancaPage: React.FC = () => {
           .filter((banco) => banco.previsto !== 0 || banco.realizado !== 0)
           .sort((a, b) => b.realizado - a.realizado || a.nome.localeCompare(b.nome, 'pt-BR'));
 
-        // Totais consolidados: soma TODOS os valores previstos e realizados
+        // Processar categorização por Títulos e Depósitos
+        type BancoCategoriaAcumulado = {
+          nome: string;
+          titulos: { receitaPrevista: number; outrasReceitas: number };
+          depositos: { receitaPrevista: number; outrasReceitas: number };
+        };
+
+        const bancosCategorizadosMap = new Map<string, BancoCategoriaAcumulado>();
+
+        contasMap.forEach((conta) => {
+          const contaCodigo = toString(conta.contaNome).toUpperCase();
+          const contaNome = toString(conta.contaNome).toUpperCase();
+
+          // Identificar se é Títulos ou Depósitos
+          const ehTitulos = contaNome.includes('TÍTULO') || contaNome.includes('TITULO') || contaCodigo.startsWith('301');
+          const ehDepositos = contaNome.includes('DEPÓSITO') || contaNome.includes('DEPOSITO') || contaCodigo.startsWith('302') || contaCodigo.startsWith('303');
+
+          if (!ehTitulos && !ehDepositos) {
+            return; // Ignora contas que não são Títulos nem Depósitos
+          }
+
+          const banco = bancosCategorizadosMap.get(conta.bancoId) ?? {
+            nome: conta.bancoNome,
+            titulos: { receitaPrevista: 0, outrasReceitas: 0 },
+            depositos: { receitaPrevista: 0, outrasReceitas: 0 },
+          };
+
+          // Identificar se é Receita Prevista ou Outras Receitas
+          const tipoNomeUpper = toString(conta.tipoNome).toUpperCase();
+          const ehReceitaPrevista = tipoNomeUpper.includes('PREVIS') || tipoNomeUpper.includes('301');
+
+          if (ehTitulos) {
+            if (ehReceitaPrevista) {
+              banco.titulos.receitaPrevista += conta.realizado; // Usar realizado pois é o que foi cobrado
+            } else {
+              banco.titulos.outrasReceitas += conta.realizado;
+            }
+          } else if (ehDepositos) {
+            if (ehReceitaPrevista) {
+              banco.depositos.receitaPrevista += conta.realizado;
+            } else {
+              banco.depositos.outrasReceitas += conta.realizado;
+            }
+          }
+
+          bancosCategorizadosMap.set(conta.bancoId, banco);
+        });
+
+        const bancosCategorizado: BancoCategorizado[] = Array.from(bancosCategorizadosMap.entries())
+          .map(([id, banco]) => ({
+            id,
+            nome: banco.nome,
+            titulos: {
+              receitaPrevista: arredondar(banco.titulos.receitaPrevista),
+              outrasReceitas: arredondar(banco.titulos.outrasReceitas),
+              total: arredondar(banco.titulos.receitaPrevista + banco.titulos.outrasReceitas),
+            },
+            depositos: {
+              receitaPrevista: arredondar(banco.depositos.receitaPrevista),
+              outrasReceitas: arredondar(banco.depositos.outrasReceitas),
+              total: arredondar(banco.depositos.receitaPrevista + banco.depositos.outrasReceitas),
+            },
+          }))
+          .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+
+        // Totais consolidados
         const totalPrevisto = arredondar(bancos.reduce((acc, banco) => acc + banco.previsto, 0));
         const totalRealizado = arredondar(bancos.reduce((acc, banco) => acc + banco.realizado, 0));
         const diferenca = arredondar(totalRealizado - totalPrevisto);
 
+        const titulosTotal = arredondar(
+          bancosCategorizado.reduce((acc, b) => acc + b.titulos.total, 0)
+        );
+        const depositosTotal = arredondar(
+          bancosCategorizado.reduce((acc, b) => acc + b.depositos.total, 0)
+        );
+        const totalCategorizado = titulosTotal + depositosTotal;
+        const percentualTitulos = totalCategorizado > 0 ? arredondar((titulosTotal / totalCategorizado) * 100) : 0;
+        const percentualDepositos = totalCategorizado > 0 ? arredondar((depositosTotal / totalCategorizado) * 100) : 0;
+
         setRelatorio({
           data,
           bancos,
+          bancosCategorizado,
           totais: {
             previsto: totalPrevisto,
             realizado: totalRealizado,
             diferenca,
+            titulosTotal,
+            depositosTotal,
+            percentualTitulos,
+            percentualDepositos,
           },
         });
         setErro(null);
@@ -663,115 +761,165 @@ const RelatorioCobrancaPage: React.FC = () => {
           </Card>
         ) : relatorio ? (
           <>
-            <Card
-              title={`Resumo por Banco (${formatarDataPt(relatorio.data)})`}
-              subtitle="Comparativo entre valores previstos e realizados para cada banco com movimentação"
-            >
-              {relatorio.bancos.length === 0 ? (
-                <p className="text-sm text-gray-500">Nenhum banco apresentou movimentação na data selecionada.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm text-gray-700">
-                    <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                      <tr>
-                        <th className="px-4 py-3 text-center font-semibold">Banco</th>
-                        <th className="px-4 py-3 text-center font-semibold">Realizado</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 bg-white">
-                      {relatorio.bancos.map((banco) => (
-                        <tr key={banco.id}>
-                          <td className="px-4 py-3 font-medium text-gray-800">{banco.nome}</td>
-                          <td className="px-4 py-3 text-right text-gray-700">{formatCurrency(banco.realizado)}</td>
+            {/* Resumo por Banco - Half Width */}
+            <div className="lg:w-1/2">
+              <Card
+                title={`Resumo por Banco (${formatarDataPt(relatorio.data)})`}
+                subtitle="Valores realizados por banco"
+              >
+                {relatorio.bancos.length === 0 ? (
+                  <p className="text-sm text-gray-500">Nenhum banco apresentou movimentação na data selecionada.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm text-gray-700">
+                      <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-semibold">Banco</th>
+                          <th className="px-4 py-3 text-right font-semibold">Realizado</th>
                         </tr>
-                      ))}
-                    </tbody>
-                    <tfoot className="bg-gray-50 text-sm font-semibold text-gray-700 border-t-2 border-gray-400">
-                      <tr>
-                        <td className="px-4 py-3 text-right">Total</td>
-                        <td className="px-4 py-3 text-right">{formatCurrency(relatorio.totais.realizado)}</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              )}
-            </Card>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 bg-white">
+                        {relatorio.bancos.map((banco) => (
+                          <tr key={banco.id}>
+                            <td className="px-4 py-3 font-medium text-gray-800">{banco.nome}</td>
+                            <td className="px-4 py-3 text-right text-gray-700">{formatCurrency(banco.realizado)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-gray-50 text-sm font-semibold text-gray-700 border-t-2 border-gray-400">
+                        <tr>
+                          <td className="px-4 py-3 text-right">Total</td>
+                          <td className="px-4 py-3 text-right">{formatCurrency(relatorio.totais.realizado)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </Card>
+            </div>
 
-            {relatorio.bancos.length > 0 && (
-              <div className="grid gap-6 lg:grid-cols-2">
-                {relatorio.bancos.map((banco) => (
-                  <Card
-                    key={banco.id}
-                    title={banco.nome}
-                    subtitle="Distribuição das receitas realizadas por tipo"
-                  >
-                    {banco.tipos.length === 0 ? (
-                      <p className="text-sm text-gray-500">
-                        Nenhuma receita realizada para este banco na data selecionada.
-                      </p>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full text-sm text-gray-700">
-                          <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                            <tr>
-                              <th className="px-4 py-3 text-center font-semibold">Tipo de Receita</th>
-                              <th className="px-4 py-3 text-center font-semibold">Previsto</th>
-                              <th className="px-4 py-3 text-center font-semibold">Realizado</th>
-                              <th className="px-4 py-3 text-center font-semibold">Diferença</th>
-                              <th className="px-4 py-3 text-center font-semibold">% REC</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100 bg-white">
-                            {banco.tipos.map((tipo) => {
-                              const ehPrevista = tipo.nome.trim().toUpperCase().includes('PREVIS');
-                              return (
-                                <tr key={tipo.id}>
-                                  <td className="px-4 py-3 font-medium text-gray-800">{tipo.nome}</td>
-                                  <td className="px-4 py-3 text-right text-gray-700">
-                                    {ehPrevista ? formatCurrency(tipo.previsto) : '-'}
-                                  </td>
-                                  <td className="px-4 py-3 text-right text-gray-700">{formatCurrency(tipo.realizado)}</td>
-                                  <td
-                                    className={`px-4 py-3 text-right font-semibold ${
-                                      ehPrevista && tipo.diferenca >= 0 ? 'text-success-600' : ehPrevista && tipo.diferenca < 0 ? 'text-error-600' : 'text-gray-700'
-                                    }`}
-                                  >
-                                    {ehPrevista ? formatCurrency(tipo.diferenca) : '-'}
-                                  </td>
-                                  <td className="px-4 py-3 text-right text-gray-700">
-                                    {ehPrevista ? `${tipo.percentual.toFixed(1).replace('.', ',')}%` : '-'}
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </Card>
-                ))}
-              </div>
+            {/* Títulos Section */}
+            {relatorio.bancosCategorizado.length > 0 && (
+              <>
+                <div className="mt-6">
+                  <h2 className="text-xl font-bold text-gray-900 mb-4">Receitas em Títulos</h2>
+                  <div className="grid gap-4 md:grid-cols-3">
+                    {relatorio.bancosCategorizado.map((banco) => (
+                      <Card key={`titulos-${banco.id}`} title={banco.nome}>
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">Receita prevista</span>
+                            <span className="text-sm font-semibold text-gray-900">
+                              {formatCurrency(banco.titulos.receitaPrevista)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">Outras receitas</span>
+                            <span className="text-sm font-semibold text-gray-900">
+                              {formatCurrency(banco.titulos.outrasReceitas)}
+                            </span>
+                          </div>
+                          <div className="pt-2 border-t border-gray-200">
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm font-bold text-gray-800">Total</span>
+                              <span className="text-base font-bold text-success-700">
+                                {formatCurrency(banco.titulos.total)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Depósitos Section */}
+                <div className="mt-6">
+                  <h2 className="text-xl font-bold text-gray-900 mb-4">Receitas em Depósitos</h2>
+                  <div className="grid gap-4 md:grid-cols-3">
+                    {relatorio.bancosCategorizado.map((banco) => (
+                      <Card key={`depositos-${banco.id}`} title={banco.nome}>
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">Receita prevista</span>
+                            <span className="text-sm font-semibold text-gray-900">
+                              {formatCurrency(banco.depositos.receitaPrevista)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600">Outras receitas</span>
+                            <span className="text-sm font-semibold text-gray-900">
+                              {formatCurrency(banco.depositos.outrasReceitas)}
+                            </span>
+                          </div>
+                          <div className="pt-2 border-t border-gray-200">
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm font-bold text-gray-800">Total</span>
+                              <span className="text-base font-bold text-success-700">
+                                {formatCurrency(banco.depositos.total)}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              </>
             )}
 
-            <Card title="Totais consolidados" subtitle="Resumo final das receitas previstas e realizadas no dia">
-              <div className="space-y-3 text-sm text-gray-700">
-                <div className="flex items-center justify-between">
-                  <span>Receitas realizadas</span>
-                  <span className="font-semibold text-success-700">{formatCurrency(relatorio.totais.realizado)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Valor da previsão de receita</span>
-                  <span className="font-semibold">{formatCurrency(relatorio.totais.previsto)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Diferença entre receita e previsão</span>
-                  <span
-                    className={`font-semibold ${
-                      relatorio.totais.diferenca >= 0 ? 'text-success-700' : 'text-error-600'
-                    }`}
-                  >
-                    {formatCurrency(relatorio.totais.diferenca)}
-                  </span>
+            {/* Totais Consolidados */}
+            <Card title="Totais consolidados" subtitle="Resumo final com distribuição por categoria">
+              <div className="space-y-4">
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-gray-800 uppercase">Receitas</h3>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-700">Receitas realizadas</span>
+                      <span className="font-semibold text-success-700">{formatCurrency(relatorio.totais.realizado)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-700">Valor da previsão</span>
+                      <span className="font-semibold text-gray-900">{formatCurrency(relatorio.totais.previsto)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-700">Diferença</span>
+                      <span
+                        className={`font-semibold ${
+                          relatorio.totais.diferenca >= 0 ? 'text-success-700' : 'text-error-600'
+                        }`}
+                      >
+                        {formatCurrency(relatorio.totais.diferenca)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-bold text-gray-800 uppercase">Distribuição</h3>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-700">Títulos</span>
+                      <div className="flex items-center gap-3">
+                        <span className="font-semibold text-gray-900">{formatCurrency(relatorio.totais.titulosTotal)}</span>
+                        <span className="text-xs font-medium text-primary-600 bg-primary-50 px-2 py-1 rounded">
+                          {relatorio.totais.percentualTitulos.toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-700">Depósitos</span>
+                      <div className="flex items-center gap-3">
+                        <span className="font-semibold text-gray-900">{formatCurrency(relatorio.totais.depositosTotal)}</span>
+                        <span className="text-xs font-medium text-primary-600 bg-primary-50 px-2 py-1 rounded">
+                          {relatorio.totais.percentualDepositos.toFixed(1)}%
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between text-sm pt-2 border-t border-gray-200">
+                      <span className="font-bold text-gray-800">Total categorizado</span>
+                      <span className="font-bold text-success-700">
+                        {formatCurrency(relatorio.totais.titulosTotal + relatorio.totais.depositosTotal)}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </Card>
