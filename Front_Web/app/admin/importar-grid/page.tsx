@@ -4,6 +4,8 @@ import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import { Header } from '@/components/layout';
 import { Button, Card } from '@/components/ui';
+import { ConfirmModal } from '@/components/ui/Modal';
+import Toast from '@/components/ui/Toast';
 import { getUserSession } from '@/lib/userSession';
 
 type LinhaArquivo = {
@@ -73,6 +75,23 @@ export default function ImportarDadosGrid() {
   const [importando, setImportando] = useState(false);
   const session = getUserSession();
 
+  // Estados para Toast e Modal
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' | 'info' } | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
+  // Estado para aplicação em lote de mapeamento
+  const [mapeamentoEmLote, setMapeamentoEmLote] = useState<number | ''>('');
+
   // Função para converter data do Excel para DD/MM/YYYY
   const converterDataExcel = (data: any): string => {
     if (!data) return '';
@@ -128,7 +147,7 @@ export default function ImportarDadosGrid() {
 
       setLinhas(linhasProcessadas);
     } catch (error) {
-      alert('Erro ao ler arquivo: ' + (error as Error).message);
+      setToast({ message: 'Erro ao ler arquivo: ' + (error as Error).message, type: 'error' });
     } finally {
       setProcessando(false);
     }
@@ -158,27 +177,65 @@ export default function ImportarDadosGrid() {
 
   const [tipoEmLote, setTipoEmLote] = useState('');
 
-  const handleAplicarEmLote = () => {
+  const handleAplicarTipoEmLote = () => {
     if (!tipoEmLote) {
-      alert('Selecione um tipo de importação primeiro!');
+      setToast({ message: 'Selecione um tipo de importação primeiro!', type: 'warning' });
       return;
     }
 
     const linhasSelecionadas = linhas.filter(l => l.incluir).length;
     if (linhasSelecionadas === 0) {
-      alert('Selecione pelo menos uma linha primeiro!');
+      setToast({ message: 'Selecione pelo menos uma linha primeiro!', type: 'warning' });
       return;
     }
 
-    if (!confirm(`Aplicar "${TIPOS_IMPORTACAO.find(t => t.value === tipoEmLote)?.label}" em ${linhasSelecionadas} linhas?`)) {
+    const tipoLabel = TIPOS_IMPORTACAO.find(t => t.value === tipoEmLote)?.label;
+
+    setConfirmModal({
+      isOpen: true,
+      title: 'Aplicar Tipo em Lote',
+      message: `Deseja aplicar "${tipoLabel}" em ${linhasSelecionadas} linhas selecionadas?`,
+      onConfirm: () => {
+        setLinhas(prev => prev.map(linha =>
+          linha.incluir ? { ...linha, tipoImportacao: tipoEmLote, mapeamentoId: null } : linha
+        ));
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        setToast({ message: `Tipo aplicado em ${linhasSelecionadas} linhas com sucesso!`, type: 'success' });
+      },
+    });
+  };
+
+  const handleAplicarMapeamentoEmLote = () => {
+    if (!mapeamentoEmLote) {
+      setToast({ message: 'Selecione um mapeamento primeiro!', type: 'warning' });
       return;
     }
 
-    setLinhas(prev => prev.map(linha =>
-      linha.incluir ? { ...linha, tipoImportacao: tipoEmLote, mapeamentoId: null } : linha
-    ));
+    const linhasSelecionadas = linhas.filter(l => l.incluir && l.tipoImportacao).length;
+    if (linhasSelecionadas === 0) {
+      setToast({ message: 'Selecione pelo menos uma linha com tipo definido!', type: 'warning' });
+      return;
+    }
 
-    alert(`✅ Tipo aplicado em ${linhasSelecionadas} linhas!`);
+    // Determinar qual tipo de mapeamento baseado na primeira linha selecionada
+    const primeiraLinhaSelecionada = linhas.find(l => l.incluir && l.tipoImportacao);
+    if (!primeiraLinhaSelecionada) return;
+
+    const opcoes = obterOpcoesMapeamento(primeiraLinhaSelecionada.tipoImportacao);
+    const mapeamentoNome = opcoes.find(o => o.id === mapeamentoEmLote)?.nome;
+
+    setConfirmModal({
+      isOpen: true,
+      title: 'Aplicar Mapeamento em Lote',
+      message: `Deseja aplicar o mapeamento "${mapeamentoNome}" em ${linhasSelecionadas} linhas selecionadas?`,
+      onConfirm: () => {
+        setLinhas(prev => prev.map(linha =>
+          linha.incluir && linha.tipoImportacao ? { ...linha, mapeamentoId: Number(mapeamentoEmLote) } : linha
+        ));
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        setToast({ message: `Mapeamento aplicado em ${linhasSelecionadas} linhas com sucesso!`, type: 'success' });
+      },
+    });
   };
 
   const obterOpcoesMapeamento = (tipo: string): OpcaoMapeamento[] => {
@@ -188,34 +245,46 @@ export default function ImportarDadosGrid() {
     return [];
   };
 
-  const validarLinhas = (): boolean => {
+  const validarLinhas = (): string | null => {
     const linhasIncluidas = linhas.filter(l => l.incluir);
 
     if (linhasIncluidas.length === 0) {
-      alert('Selecione pelo menos uma linha para importar!');
-      return false;
+      return 'Selecione pelo menos uma linha para importar!';
     }
 
     for (const linha of linhasIncluidas) {
       if (!linha.tipoImportacao) {
-        alert(`Linha "${linha.Area}" sem tipo de importação!`);
-        return false;
+        return `Linha "${linha.Area}" sem tipo de importação!`;
       }
       if (linha.mapeamentoId === null) {
-        alert(`Linha "${linha.Area}" sem mapeamento configurado!`);
-        return false;
+        return `Linha "${linha.Area}" sem mapeamento configurado!`;
       }
     }
 
-    return true;
+    return null;
+  };
+
+  const iniciarImportacao = () => {
+    const erro = validarLinhas();
+    if (erro) {
+      setToast({ message: erro, type: 'error' });
+      return;
+    }
+
+    const qtdLinhas = linhas.filter(l => l.incluir).length;
+
+    setConfirmModal({
+      isOpen: true,
+      title: 'Confirmar Importação',
+      message: `Deseja realmente importar ${qtdLinhas} linhas para o sistema? Esta ação não pode ser desfeita.`,
+      onConfirm: () => {
+        setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        handleImportar();
+      },
+    });
   };
 
   const handleImportar = async () => {
-    if (!validarLinhas()) return;
-
-    if (!confirm(`Confirma a importação de ${linhas.filter(l => l.incluir).length} linhas?`)) {
-      return;
-    }
 
     setImportando(true);
 
@@ -245,7 +314,10 @@ export default function ImportarDadosGrid() {
         throw new Error(resultado.error || 'Erro ao importar');
       }
 
-      alert(`✅ Importação concluída!\n\nSucesso: ${resultado.sucesso}\nErros: ${resultado.erro}`);
+      setToast({
+        message: `Importação concluída! Sucesso: ${resultado.sucesso}, Erros: ${resultado.erro}`,
+        type: resultado.erro > 0 ? 'warning' : 'success'
+      });
 
       // Limpa o formulário
       setArquivo(null);
@@ -254,7 +326,7 @@ export default function ImportarDadosGrid() {
       if (input) input.value = '';
 
     } catch (error: any) {
-      alert('❌ Erro: ' + error.message);
+      setToast({ message: 'Erro ao importar: ' + error.message, type: 'error' });
     } finally {
       setImportando(false);
     }
@@ -304,9 +376,9 @@ export default function ImportarDadosGrid() {
               <div className="bg-yellow-50 p-3 rounded text-sm">
                 <p className="font-semibold text-yellow-900 mb-1">📋 Como configurar:</p>
                 <ol className="list-decimal ml-5 text-yellow-800 space-y-1">
-                  <li>Use &quot;Aplicar em Lote&quot; para definir o tipo de importação para todas as linhas selecionadas</li>
-                  <li>Ajuste tipos individuais se necessário usando o dropdown de cada linha</li>
-                  <li>Após definir o tipo, configure o &quot;Mapear Para&quot; de cada linha</li>
+                  <li>Use &quot;Tipo em Lote&quot; para definir o tipo de importação para todas as linhas selecionadas</li>
+                  <li>Use &quot;Mapeamento em Lote&quot; para aplicar o mapeamento em todas as linhas selecionadas</li>
+                  <li>Ajuste configurações individuais se necessário usando os dropdowns de cada linha</li>
                   <li>Revise e clique em &quot;Confirmar e Importar&quot;</li>
                 </ol>
               </div>
@@ -330,7 +402,7 @@ export default function ImportarDadosGrid() {
 
                 <div className="flex gap-3 items-center bg-blue-50 p-3 rounded">
                   <label className="font-semibold text-sm text-blue-900 whitespace-nowrap">
-                    ⚡ Aplicar em Lote:
+                    ⚡ Tipo em Lote:
                   </label>
                   <select
                     value={tipoEmLote}
@@ -343,9 +415,43 @@ export default function ImportarDadosGrid() {
                   </select>
                   <Button
                     variant="primary"
-                    onClick={handleAplicarEmLote}
+                    onClick={handleAplicarTipoEmLote}
                   >
-                    ⚡ Aplicar nas Selecionadas
+                    ⚡ Aplicar Tipo
+                  </Button>
+                </div>
+
+                <div className="flex gap-3 items-center bg-green-50 p-3 rounded">
+                  <label className="font-semibold text-sm text-green-900 whitespace-nowrap">
+                    🎯 Mapeamento em Lote:
+                  </label>
+                  <select
+                    value={mapeamentoEmLote}
+                    onChange={(e) => setMapeamentoEmLote(Number(e.target.value) || '')}
+                    className="flex-1 border rounded px-3 py-2 text-sm"
+                  >
+                    <option value="">-- Selecione o mapeamento --</option>
+                    {linhas.some(l => l.incluir && (l.tipoImportacao === 'pagamento_area' || l.tipoImportacao === 'previsao_area')) &&
+                      AREAS.map(opt => (
+                        <option key={opt.id} value={opt.id}>[{opt.id}] {opt.nome}</option>
+                      ))
+                    }
+                    {linhas.some(l => l.incluir && l.tipoImportacao === 'saldo_banco') &&
+                      BANCOS.map(opt => (
+                        <option key={opt.id} value={opt.id}>[{opt.id}] {opt.nome}</option>
+                      ))
+                    }
+                    {linhas.some(l => l.incluir && (l.tipoImportacao === 'receita_tipo' || l.tipoImportacao === 'previsao_receita')) &&
+                      TIPOS_RECEITA.map(opt => (
+                        <option key={opt.id} value={opt.id}>[{opt.id}] {opt.nome}</option>
+                      ))
+                    }
+                  </select>
+                  <Button
+                    variant="primary"
+                    onClick={handleAplicarMapeamentoEmLote}
+                  >
+                    🎯 Aplicar Mapeamento
                   </Button>
                 </div>
               </div>
@@ -433,7 +539,7 @@ export default function ImportarDadosGrid() {
               <div className="flex justify-end pt-4 border-t">
                 <Button
                   variant="primary"
-                  onClick={handleImportar}
+                  onClick={iniciarImportacao}
                   disabled={importando || linhas.filter(l => l.incluir).length === 0 || session.userName?.toUpperCase() !== 'GENARO'}
                   loading={importando}
                 >
@@ -444,6 +550,26 @@ export default function ImportarDadosGrid() {
           </Card>
         )}
       </div>
+
+      {/* Toast de Notificações */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
+
+      {/* Modal de Confirmação */}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmText="Confirmar"
+        cancelText="Cancelar"
+      />
     </>
   );
 }
