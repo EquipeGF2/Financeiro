@@ -40,17 +40,10 @@
     "descricao": "Mapeamento de nomes de bancos para IDs da tabela ban_bancos",
     "nota": "Para 'Saldo por Banco' - usa tabela pbk_pagamentos_banco",
     "mapeamento": {
-      "BANCO DO BRASIL": 1,
-      "BB": 1,
-      "BRADESCO": 2,
+      "BANCO DO BRASIL": 4,
+      "BB": 4,
+      "BRADESCO": 5,
       "BANRISUL": 3,
-      "CAIXA": 4,
-      "CAIXA ECONOMICA": 4,
-      "CAIXA ECONÔMICA": 4,
-      "SANTANDER": 5,
-      "ITAU": 6,
-      "ITAÚ": 6,
-      "SICOOB": 7,
       "SICREDI": 8
     }
   },
