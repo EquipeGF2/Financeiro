@@ -67,6 +67,7 @@ const TIPOS_RECEITA: OpcaoMapeamento[] = [
   { id: 1, nome: 'Receitas em Títulos/Boletos' },
   { id: 2, nome: 'Receitas em Depósitos/PIX' },
   { id: 3, nome: 'Outras Receitas' },
+  { id: 4, nome: 'Resgate Aplicação' },
 ];
 
 export default function ImportarDadosGrid() {

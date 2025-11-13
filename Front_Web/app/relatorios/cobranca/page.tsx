@@ -29,8 +29,8 @@ type PrevisaoRow = {
   pvi_valor?: unknown;
   pvi_ctr_id?: unknown;
   pvi_ban_id?: unknown;
+  pvi_tpr_id?: unknown;
   ctr_contas_receita?: MaybeArray<{ ctr_nome?: unknown; ctr_codigo?: unknown } | null>;
-  ban_bancos?: MaybeArray<{ ban_nome?: unknown; ban_codigo?: unknown } | null>;
   tpr_tipos_receita?: MaybeArray<{ tpr_id?: unknown; tpr_nome?: unknown; tpr_codigo?: unknown } | null>;
 };
 
@@ -38,9 +38,15 @@ type CobrancaRow = {
   cob_valor?: unknown;
   cob_ctr_id?: unknown;
   cob_ban_id?: unknown;
+  cob_tpr_id?: unknown;
   ctr_contas_receita?: MaybeArray<{ ctr_nome?: unknown; ctr_codigo?: unknown } | null>;
-  ban_bancos?: MaybeArray<{ ban_nome?: unknown; ban_codigo?: unknown } | null>;
   tpr_tipos_receita?: MaybeArray<{ tpr_id?: unknown; tpr_nome?: unknown; tpr_codigo?: unknown } | null>;
+};
+
+type BancoRow = {
+  ban_id?: unknown;
+  ban_nome?: unknown;
+  ban_codigo?: unknown;
 };
 
 type TipoResumo = {
@@ -177,25 +183,42 @@ const RelatorioCobrancaPage: React.FC = () => {
         setCarregandoDados(true);
         const supabase = getSupabaseClient();
 
-        const [previsoesRes, cobrancasRes] = await Promise.all([
+        const [previsoesRes, cobrancasRes, bancosRes] = await Promise.all([
           supabase
             .from('pvi_previsao_itens')
             .select(
-              'pvi_valor, pvi_ctr_id, pvi_ban_id, ctr_contas_receita(ctr_nome, ctr_codigo), ban_bancos!pvi_ban_id(ban_nome, ban_codigo), tpr_tipos_receita(tpr_id, tpr_nome, tpr_codigo)',
+              'pvi_valor, pvi_ctr_id, pvi_ban_id, pvi_tpr_id, ctr_contas_receita(ctr_nome, ctr_codigo), tpr_tipos_receita(tpr_id, tpr_nome, tpr_codigo)',
             )
             .eq('pvi_tipo', 'receita')
             .eq('pvi_data', data),
           supabase
             .from('cob_cobrancas')
-            .select('cob_valor, cob_ctr_id, cob_ban_id, ctr_contas_receita(ctr_nome, ctr_codigo), ban_bancos!cob_ban_id(ban_nome, ban_codigo), tpr_tipos_receita(tpr_id, tpr_nome, tpr_codigo)')
+            .select('cob_valor, cob_ctr_id, cob_ban_id, cob_tpr_id, ctr_contas_receita(ctr_nome, ctr_codigo), tpr_tipos_receita(tpr_id, tpr_nome, tpr_codigo)')
             .eq('cob_data', data),
+          supabase
+            .from('ban_bancos')
+            .select('ban_id, ban_nome, ban_codigo'),
         ]);
 
         if (previsoesRes.error) throw previsoesRes.error;
         if (cobrancasRes.error) throw cobrancasRes.error;
+        if (bancosRes.error) throw bancosRes.error;
 
         const previsoes = normalizeRelation(previsoesRes.data as MaybeArray<PrevisaoRow>);
         const cobrancas = normalizeRelation(cobrancasRes.data as MaybeArray<CobrancaRow>);
+        const bancosData = normalizeRelation(bancosRes.data as MaybeArray<BancoRow>);
+
+        // Criar mapa de bancos para lookup rápido
+        const bancosMap = new Map<number, { nome: string; codigo: string }>();
+        bancosData.forEach((banco) => {
+          const banId = toNumber(banco.ban_id);
+          if (banId > 0) {
+            bancosMap.set(banId, {
+              nome: toString(banco.ban_nome, 'Banco não informado'),
+              codigo: toString(banco.ban_codigo, ''),
+            });
+          }
+        });
 
         type ContaResumo = {
           chave: string;
@@ -221,14 +244,14 @@ const RelatorioCobrancaPage: React.FC = () => {
           const contaId = toNumber(item.pvi_ctr_id, 0);
           const contaChave = construirChave(contaId, contaNome, 'conta');
 
-          const bancoRel = normalizeRelation(item.ban_bancos)[0];
-          const bancoNome = bancoRel?.ban_nome ? toString(bancoRel.ban_nome) : 'Banco não informado';
-          const bancoIdNumero = toNumber(item.pvi_ban_id, NaN);
+          const bancoIdNumero = toNumber(item.pvi_ban_id, 0);
+          const bancoInfo = bancosMap.get(bancoIdNumero);
+          const bancoNome = bancoInfo?.nome ?? 'Banco não informado';
           const bancoChave = construirChave(bancoIdNumero, bancoNome, 'banco');
 
+          const tipoIdNumero = toNumber(item.pvi_tpr_id, 0);
           const tipoRel = normalizeRelation(item.tpr_tipos_receita)[0];
           const tipoNome = tipoRel?.tpr_nome ? toString(tipoRel.tpr_nome) : contaNome;
-          const tipoIdNumero = toNumber(tipoRel?.tpr_id, NaN);
           const tipoChave = construirChave(tipoIdNumero, tipoNome, 'tipo');
 
           const existente = contasMap.get(contaChave) ?? {
@@ -261,14 +284,14 @@ const RelatorioCobrancaPage: React.FC = () => {
           const contaId = toNumber(item.cob_ctr_id, 0);
           const contaChave = construirChave(contaId, contaNome, 'conta');
 
-          const bancoRel = normalizeRelation(item.ban_bancos)[0];
-          const bancoNome = bancoRel?.ban_nome ? toString(bancoRel.ban_nome) : 'Banco não informado';
-          const bancoIdNumero = toNumber(item.cob_ban_id, NaN);
+          const bancoIdNumero = toNumber(item.cob_ban_id, 0);
+          const bancoInfo = bancosMap.get(bancoIdNumero);
+          const bancoNome = bancoInfo?.nome ?? 'Banco não informado';
           const bancoChave = construirChave(bancoIdNumero, bancoNome, 'banco');
 
+          const tipoIdNumero = toNumber(item.cob_tpr_id, 0);
           const tipoRel = normalizeRelation(item.tpr_tipos_receita)[0];
           const tipoNome = tipoRel?.tpr_nome ? toString(tipoRel.tpr_nome) : contaNome;
-          const tipoIdNumero = toNumber(tipoRel?.tpr_id, NaN);
           const tipoChave = construirChave(tipoIdNumero, tipoNome, 'tipo');
 
           const existente = contasMap.get(contaChave) ?? {

@@ -309,21 +309,21 @@ export const Sidebar: React.FC = () => {
   };
 
   const getSectionColorClasses = () => {
-    // Todas as seções com fundo vermelho
-    return 'bg-red-600 border-red-700';
+    // Todas as seções com fundo branco
+    return 'bg-white border-gray-200';
   };
 
   const getTitleColorClass = () => {
-    // Todos os títulos em branco
-    return 'text-white';
+    // Todos os títulos em vermelho e em evidência
+    return 'text-error-600 font-extrabold text-sm';
   };
 
   const getItemColorClass = (active: boolean) => {
-    // Fundo vermelho, texto branco
-    // Quando ativo, fica branco com texto vermelho
+    // Fundo branco, texto vermelho
+    // Quando ativo, fica vermelho com fundo levemente vermelho
     return active
-      ? 'bg-white text-red-600 shadow-sm font-semibold'
-      : 'text-white hover:bg-red-700 hover:shadow-sm';
+      ? 'bg-error-50 text-error-700 shadow-sm font-semibold'
+      : 'text-error-600 hover:bg-error-50 hover:text-error-700';
   };
 
   return (
