@@ -299,6 +299,9 @@ export default function ImportarDadosGrid() {
         mapeamentoId: l.mapeamentoId,
       }));
 
+      console.log('[IMPORTAÇÃO] Primeira linha a ser enviada:', linhasParaImportar[0]);
+      console.log('[IMPORTAÇÃO] Total de linhas:', linhasParaImportar.length);
+
       const response = await fetch('/api/importar-dados-grid', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -315,10 +318,19 @@ export default function ImportarDadosGrid() {
         throw new Error(resultado.error || 'Erro ao importar');
       }
 
-      setToast({
-        message: `Importação concluída! Sucesso: ${resultado.sucesso}, Erros: ${resultado.erro}`,
-        type: resultado.erro > 0 ? 'warning' : 'success'
-      });
+      // Mostrar erros detalhados se houver
+      if (resultado.erros && resultado.erros.length > 0) {
+        console.error('[IMPORTAÇÃO] Erros detalhados:', resultado.erros);
+        setToast({
+          message: `Importação concluída com erros! Sucesso: ${resultado.sucesso}, Erros: ${resultado.erro}. Primeiro erro: ${resultado.erros[0]}`,
+          type: 'error'
+        });
+      } else {
+        setToast({
+          message: `Importação concluída! Sucesso: ${resultado.sucesso}, Erros: ${resultado.erro}`,
+          type: resultado.erro > 0 ? 'warning' : 'success'
+        });
+      }
 
       // Limpa o formulário
       setArquivo(null);
