@@ -308,41 +308,36 @@ export const Sidebar: React.FC = () => {
     return pathname.startsWith(href);
   };
 
-  const getSectionColorClasses = (color?: string) => {
-    switch (color) {
-      case 'blue':
-        return 'bg-blue-50 border-blue-200';
-      case 'green':
-        return 'bg-green-50 border-green-200';
-      case 'purple':
-        return 'bg-purple-50 border-purple-200';
-      case 'yellow':
-        return 'bg-yellow-50 border-yellow-200';
-      case 'indigo':
-        return 'bg-indigo-50 border-indigo-200';
-      case 'red':
-        return 'bg-red-50 border-red-200';
-      default:
-        return 'bg-gray-50 border-gray-200';
+  const getSectionColorClasses = (index: number) => {
+    // Alternar entre branco e vermelho
+    if (index % 2 === 0) {
+      // Fundo branco, texto vermelho
+      return 'bg-white border-red-200';
+    } else {
+      // Fundo vermelho, texto branco
+      return 'bg-red-600 border-red-700';
     }
   };
 
-  const getTitleColorClass = (color?: string) => {
-    switch (color) {
-      case 'blue':
-        return 'text-blue-700';
-      case 'green':
-        return 'text-green-700';
-      case 'purple':
-        return 'text-purple-700';
-      case 'yellow':
-        return 'text-yellow-700';
-      case 'indigo':
-        return 'text-indigo-700';
-      case 'red':
-        return 'text-red-700';
-      default:
-        return 'text-gray-500';
+  const getTitleColorClass = (index: number) => {
+    if (index % 2 === 0) {
+      return 'text-red-700';
+    } else {
+      return 'text-white';
+    }
+  };
+
+  const getItemColorClass = (index: number, active: boolean) => {
+    if (index % 2 === 0) {
+      // Quadro branco
+      return active
+        ? 'bg-red-50 text-red-700 shadow-sm'
+        : 'text-gray-700 hover:bg-red-50 hover:text-red-700 hover:shadow-sm';
+    } else {
+      // Quadro vermelho
+      return active
+        ? 'bg-red-700 text-white shadow-sm'
+        : 'text-white hover:bg-red-700 hover:shadow-sm';
     }
   };
 
@@ -362,9 +357,9 @@ export const Sidebar: React.FC = () => {
       {/* Navigation */}
       <div className="sidebar__scroll">
         <nav className="p-4 space-y-4 pb-6">
-          {navigationSections.map((section) => (
-            <div key={section.title} className={`rounded-lg border p-3 ${getSectionColorClasses(section.color)}`}>
-              <h3 className={`px-2 text-xs font-bold uppercase tracking-wider mb-2 ${getTitleColorClass(section.color)}`}>
+          {navigationSections.map((section, sectionIndex) => (
+            <div key={section.title} className={`rounded-lg border p-3 ${getSectionColorClasses(sectionIndex)}`}>
+              <h3 className={`px-2 text-xs font-bold uppercase tracking-wider mb-2 ${getTitleColorClass(sectionIndex)}`}>
                 {section.title}
               </h3>
               <ul className="space-y-1">
@@ -375,11 +370,7 @@ export const Sidebar: React.FC = () => {
                       className={`
                         flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium
                         transition-colors duration-150
-                        ${
-                          isActive(item.href)
-                            ? 'bg-primary-50 text-primary-700 shadow-sm'
-                            : 'text-gray-700 hover:bg-white hover:text-gray-900 hover:shadow-sm'
-                        }
+                        ${getItemColorClass(sectionIndex, isActive(item.href))}
                       `}
                     >
                       {item.icon}
