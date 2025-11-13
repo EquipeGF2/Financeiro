@@ -19,11 +19,13 @@ interface NavItem {
 interface NavSection {
   title: string;
   items: NavItem[];
+  color?: string;
 }
 
 const navigationSections: NavSection[] = [
   {
     title: 'Principal',
+    color: 'blue',
     items: [
       {
         label: 'Dashboard',
@@ -85,6 +87,7 @@ const navigationSections: NavSection[] = [
   },
   {
     title: 'Movimentação',
+    color: 'green',
     items: [
       {
         label: 'Saldo Diário',
@@ -132,6 +135,7 @@ const navigationSections: NavSection[] = [
   },
   {
     title: 'Relatórios',
+    color: 'purple',
     items: [
       {
         label: 'Previsão Semanal',
@@ -179,6 +183,7 @@ const navigationSections: NavSection[] = [
   },
   {
     title: 'Auditoria',
+    color: 'yellow',
     items: [
       {
         label: 'Saldos Diários',
@@ -198,6 +203,7 @@ const navigationSections: NavSection[] = [
   },
   {
     title: 'Cadastros',
+    color: 'indigo',
     items: [
       {
         label: 'Áreas',
@@ -273,6 +279,7 @@ const navigationSections: NavSection[] = [
   },
   {
     title: 'Administração',
+    color: 'red',
     items: [
       {
         label: 'Importar Dados (Grid)',
@@ -301,29 +308,63 @@ export const Sidebar: React.FC = () => {
     return pathname.startsWith(href);
   };
 
+  const getSectionColorClasses = (color?: string) => {
+    switch (color) {
+      case 'blue':
+        return 'bg-blue-50 border-blue-200';
+      case 'green':
+        return 'bg-green-50 border-green-200';
+      case 'purple':
+        return 'bg-purple-50 border-purple-200';
+      case 'yellow':
+        return 'bg-yellow-50 border-yellow-200';
+      case 'indigo':
+        return 'bg-indigo-50 border-indigo-200';
+      case 'red':
+        return 'bg-red-50 border-red-200';
+      default:
+        return 'bg-gray-50 border-gray-200';
+    }
+  };
+
+  const getTitleColorClass = (color?: string) => {
+    switch (color) {
+      case 'blue':
+        return 'text-blue-700';
+      case 'green':
+        return 'text-green-700';
+      case 'purple':
+        return 'text-purple-700';
+      case 'yellow':
+        return 'text-yellow-700';
+      case 'indigo':
+        return 'text-indigo-700';
+      case 'red':
+        return 'text-red-700';
+      default:
+        return 'text-gray-500';
+    }
+  };
+
   return (
     <aside className="sidebar">
       {/* Logo */}
       <div className="p-6 border-b border-gray-200">
-        <Link href="/dashboard" className="flex flex-col items-center gap-2">
+        <Link href="/dashboard" className="flex justify-center">
           <img
             src="https://static.wixstatic.com/media/cbd3a3_72a33219add84f32b64b3671a7e25171~mv2.jpg/v1/fill/w_210,h_105,al_c,q_80,usm_0.66_1.00_0.01,enc_avif,quality_auto/logo%20germani%20contorno%20dourado_Prancheta%201.jpg"
-            alt="Germani"
-            className="w-24 h-auto"
+            alt="Germani Alimentos - Sistema de Gestão Financeira"
+            className="w-36 h-auto"
           />
-          <div className="flex flex-col items-center">
-            <span className="text-lg font-bold text-primary-600">Germani</span>
-            <span className="text-sm font-medium text-gray-700">Financeiro</span>
-          </div>
         </Link>
       </div>
 
       {/* Navigation */}
       <div className="sidebar__scroll">
-        <nav className="p-4 space-y-6 pb-6">
+        <nav className="p-4 space-y-4 pb-6">
           {navigationSections.map((section) => (
-            <div key={section.title}>
-              <h3 className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+            <div key={section.title} className={`rounded-lg border p-3 ${getSectionColorClasses(section.color)}`}>
+              <h3 className={`px-2 text-xs font-bold uppercase tracking-wider mb-2 ${getTitleColorClass(section.color)}`}>
                 {section.title}
               </h3>
               <ul className="space-y-1">
@@ -336,8 +377,8 @@ export const Sidebar: React.FC = () => {
                         transition-colors duration-150
                         ${
                           isActive(item.href)
-                            ? 'bg-primary-50 text-primary-700'
-                            : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+                            ? 'bg-primary-50 text-primary-700 shadow-sm'
+                            : 'text-gray-700 hover:bg-white hover:text-gray-900 hover:shadow-sm'
                         }
                       `}
                     >

@@ -184,7 +184,7 @@ const HomePage: React.FC = () => {
     <div className="min-h-screen bg-white">
       <div className="flex min-h-screen flex-col">
         <header className="bg-[#C1272D] px-8 py-8 shadow-lg">
-          <div className="mx-auto max-w-4xl">
+          <div className="mx-auto max-w-4xl text-center">
             <h1 className="text-3xl font-bold text-white">Germani Alimentos</h1>
             <p className="mt-2 text-sm text-white/90">
               Sistema de Gestão Financeira

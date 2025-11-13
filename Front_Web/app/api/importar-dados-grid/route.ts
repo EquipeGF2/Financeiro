@@ -90,6 +90,8 @@ export async function POST(request: NextRequest) {
 
         const { tipoImportacao, mapeamentoId } = linha;
 
+        console.log(`[IMPORT] Processando linha: tipo=${tipoImportacao}, mapeamentoId=${mapeamentoId}, valor=${linha.valorRealizado || linha.valorPrevisto}`);
+
         // PAGAMENTO POR ÁREA (REALIZADO)
         if (tipoImportacao === 'pagamento_area') {
           if (linha.valorRealizado > 0) {
@@ -139,15 +141,24 @@ export async function POST(request: NextRequest) {
 
         // PAGAMENTO POR BANCO
         if (tipoImportacao === 'pagamento_banco') {
+          console.log(`[PAGAMENTO_BANCO] Processando: valor=${linha.valorRealizado}, banco=${mapeamentoId}`);
           if (linha.valorRealizado > 0) {
-            const { error: insertError } = await supabase.from('pbk_pagamentos_banco').insert({
+            const registro = {
               pbk_data: data,
               pbk_ban_id: mapeamentoId,
               pbk_valor: linha.valorRealizado,
               pbk_usr_id: usuario.usr_id,
-            });
-            if (insertError) throw insertError;
+            };
+            console.log(`[PAGAMENTO_BANCO] Inserindo:`, registro);
+            const { error: insertError } = await supabase.from('pbk_pagamentos_banco').insert(registro);
+            if (insertError) {
+              console.error(`[PAGAMENTO_BANCO] Erro:`, insertError);
+              throw insertError;
+            }
+            console.log(`[PAGAMENTO_BANCO] Sucesso!`);
             sucesso++;
+          } else {
+            console.log(`[PAGAMENTO_BANCO] Valor zero ou negativo, pulando`);
           }
           continue;
         }
