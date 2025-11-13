@@ -131,11 +131,16 @@ export async function POST(request: NextRequest) {
         // PAGAMENTO POR ÁREA (REALIZADO)
         if (tipoImportacao === 'pagamento_area') {
           if (linha.valorRealizado > 0) {
-            // Busca a área existente pelo nome
-            const areId = await buscarAreaExistente(supabase, linha.area, usuario.usr_id);
+            // Usa o mapeamentoId diretamente se fornecido, caso contrário busca pelo nome
+            let areId = mapeamentoId;
 
             if (!areId) {
-              erros.push(`Erro na linha "${linha.area}": Área não encontrada. Por favor, cadastre a área antes de importar.`);
+              // Busca a área existente pelo nome apenas se mapeamentoId não foi fornecido
+              areId = await buscarAreaExistente(supabase, linha.area, usuario.usr_id);
+            }
+
+            if (!areId) {
+              erros.push(`Pagamento de área "${linha.area}": Área não encontrada (data: ${linha.data}, valor: R$ ${linha.valorRealizado.toFixed(2)}). Cadastre a área ou use o mapeamento correto.`);
               erro++;
               continue;
             }
@@ -155,11 +160,16 @@ export async function POST(request: NextRequest) {
         // PREVISÃO POR ÁREA
         if (tipoImportacao === 'previsao_area') {
           if (linha.valorPrevisto > 0) {
-            // Busca a área existente pelo nome
-            const areId = await buscarAreaExistente(supabase, linha.area, usuario.usr_id);
+            // Usa o mapeamentoId diretamente se fornecido, caso contrário busca pelo nome
+            let areId = mapeamentoId;
 
             if (!areId) {
-              erros.push(`Erro na linha "${linha.area}": Área não encontrada. Por favor, cadastre a área antes de importar.`);
+              // Busca a área existente pelo nome apenas se mapeamentoId não foi fornecido
+              areId = await buscarAreaExistente(supabase, linha.area, usuario.usr_id);
+            }
+
+            if (!areId) {
+              erros.push(`Previsão de área "${linha.area}": Área não encontrada (data: ${linha.data}, valor: R$ ${linha.valorPrevisto.toFixed(2)}). Cadastre a área ou use o mapeamento correto.`);
               erro++;
               continue;
             }

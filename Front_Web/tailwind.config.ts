@@ -42,9 +42,9 @@ const config: Config = {
           50: '#FEF2F2',
           100: '#FEE2E2',
           200: '#FECACA',
-          500: '#EF4444',
-          600: '#DC2626',
-          700: '#B91C1C',
+          500: '#fca9a9',
+          600: '#fca9a9',
+          700: '#fca9a9',
         },
         info: {
           50: '#EFF6FF',

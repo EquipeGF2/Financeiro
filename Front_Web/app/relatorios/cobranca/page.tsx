@@ -62,13 +62,27 @@ type BancoResumo = {
   tipos: TipoResumo[];
 };
 
+type ContaBancoResumo = {
+  id: string;
+  titulo: string; // "Títulos - Banco do Brasil" ou "Depósitos - Banco Bradesco"
+  contaNome: string; // "Títulos" ou "Depósitos"
+  bancoNome: string; // "Banco do Brasil"
+  receitaPrevista: number;
+  outrasReceitas: number;
+  tipos: TipoResumo[];
+};
+
 type RelatorioCobranca = {
   data: string;
   bancos: BancoResumo[];
+  contasBancos: ContaBancoResumo[];
   totais: {
     previsto: number;
     realizado: number;
     diferenca: number;
+    percentual: number;
+    receitaPrevista: number;
+    outrasReceitas: number;
   };
 };
 
@@ -353,18 +367,115 @@ const RelatorioCobrancaPage: React.FC = () => {
           .filter((banco) => banco.previsto !== 0 || banco.realizado !== 0)
           .sort((a, b) => b.realizado - a.realizado || a.nome.localeCompare(b.nome, 'pt-BR'));
 
+        // Criar estrutura ContaBanco (Títulos/Depósitos por Banco)
+        type ContaBancoAcumulado = {
+          contaNome: string;
+          bancoNome: string;
+          tipos: Map<string, { nome: string; previsto: number; realizado: number }>;
+        };
+
+        const contasBancosMap = new Map<string, ContaBancoAcumulado>();
+
+        contasMap.forEach((conta) => {
+          if (conta.previsto === 0 && conta.realizado === 0) {
+            return;
+          }
+
+          const chaveContaBanco = `${conta.contaNome}-${conta.bancoId}`;
+          const contaBanco = contasBancosMap.get(chaveContaBanco) ?? {
+            contaNome: conta.contaNome,
+            bancoNome: conta.bancoNome,
+            tipos: new Map(),
+          };
+
+          const tipo = contaBanco.tipos.get(conta.tipoId) ?? {
+            nome: conta.tipoNome,
+            previsto: 0,
+            realizado: 0,
+          };
+
+          tipo.previsto += conta.previsto;
+          tipo.realizado += conta.realizado;
+          contaBanco.tipos.set(conta.tipoId, tipo);
+          contasBancosMap.set(chaveContaBanco, contaBanco);
+        });
+
+        const contasBancos: ContaBancoResumo[] = Array.from(contasBancosMap.entries())
+          .map(([chave, contaBanco]) => {
+            const tipos: TipoResumo[] = Array.from(contaBanco.tipos.entries())
+              .map(([tipoId, tipo]) => {
+                const previsto = arredondar(tipo.previsto);
+                const realizado = arredondar(tipo.realizado);
+                const diferenca = arredondar(realizado - previsto);
+                const percentual = previsto > 0 ? arredondar((realizado / previsto) * 100) : 0;
+                return {
+                  id: `${chave}-${tipoId}`,
+                  nome: tipo.nome,
+                  previsto,
+                  realizado,
+                  diferenca,
+                  percentual,
+                };
+              })
+              .filter((tipo) => tipo.realizado !== 0)
+              .sort((a, b) => b.realizado - a.realizado);
+
+            // Separar receita prevista de outras receitas
+            const receitaPrevista = arredondar(
+              tipos
+                .filter((t) => t.nome.trim().toUpperCase().includes('PREVIS'))
+                .reduce((acc, t) => acc + t.realizado, 0)
+            );
+            const outrasReceitas = arredondar(
+              tipos
+                .filter((t) => !t.nome.trim().toUpperCase().includes('PREVIS'))
+                .reduce((acc, t) => acc + t.realizado, 0)
+            );
+
+            return {
+              id: chave,
+              titulo: `${contaBanco.contaNome} - ${contaBanco.bancoNome}`,
+              contaNome: contaBanco.contaNome,
+              bancoNome: contaBanco.bancoNome,
+              receitaPrevista,
+              outrasReceitas,
+              tipos,
+            };
+          })
+          .filter((cb) => cb.tipos.length > 0)
+          .sort((a, b) => {
+            // Ordenar por conta (Títulos antes de Depósitos) e depois por banco
+            if (a.contaNome !== b.contaNome) {
+              return a.contaNome.localeCompare(b.contaNome, 'pt-BR');
+            }
+            return a.bancoNome.localeCompare(b.bancoNome, 'pt-BR');
+          });
+
         // Totais consolidados: soma TODOS os valores previstos e realizados
         const totalPrevisto = arredondar(bancos.reduce((acc, banco) => acc + banco.previsto, 0));
         const totalRealizado = arredondar(bancos.reduce((acc, banco) => acc + banco.realizado, 0));
         const diferenca = arredondar(totalRealizado - totalPrevisto);
+        const percentual = totalPrevisto > 0 ? arredondar((totalRealizado / totalPrevisto) * 100) : 0;
+
+        // Calcular receita prevista e outras receitas totais
+        const totalReceitaPrevista = arredondar(
+          contasBancos.reduce((acc, cb) => acc + cb.receitaPrevista, 0)
+        );
+        const totalOutrasReceitas = arredondar(
+          contasBancos.reduce((acc, cb) => acc + cb.outrasReceitas, 0)
+        );
 
         setRelatorio({
           data,
           bancos,
+          contasBancos,
           totais: {
             previsto: totalPrevisto,
             realizado: totalRealizado,
             diferenca,
+            percentual,
+            receitaPrevista: totalReceitaPrevista,
+            outrasReceitas: totalOutrasReceitas,
           },
         });
         setErro(null);
@@ -697,82 +808,189 @@ const RelatorioCobrancaPage: React.FC = () => {
               )}
             </Card>
 
-            {relatorio.bancos.length > 0 && (
-              <div className="grid gap-6 lg:grid-cols-2">
-                {relatorio.bancos.map((banco) => (
-                  <Card
-                    key={banco.id}
-                    title={banco.nome}
-                    subtitle="Distribuição das receitas realizadas por tipo"
-                  >
-                    {banco.tipos.length === 0 ? (
-                      <p className="text-sm text-gray-500">
-                        Nenhuma receita realizada para este banco na data selecionada.
-                      </p>
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full text-sm text-gray-700">
-                          <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-                            <tr>
-                              <th className="px-4 py-3 text-center font-semibold">Tipo de Receita</th>
-                              <th className="px-4 py-3 text-center font-semibold">Previsto</th>
-                              <th className="px-4 py-3 text-center font-semibold">Realizado</th>
-                              <th className="px-4 py-3 text-center font-semibold">Diferença</th>
-                              <th className="px-4 py-3 text-center font-semibold">% REC</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100 bg-white">
-                            {banco.tipos.map((tipo) => {
-                              const ehPrevista = tipo.nome.trim().toUpperCase().includes('PREVIS');
-                              return (
+            {relatorio.contasBancos.length > 0 && (
+              <>
+                <Card
+                  title="Resumo por Conta e Banco"
+                  subtitle="Distribuição das receitas previstas e outras receitas"
+                >
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-sm text-gray-700">
+                      <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-semibold">Conta de Receita</th>
+                          <th className="px-4 py-3 text-right font-semibold">Receita Prevista</th>
+                          <th className="px-4 py-3 text-right font-semibold">Outras Receitas</th>
+                          <th className="px-4 py-3 text-right font-semibold">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 bg-white">
+                        {/* Agrupar por tipo de conta (Títulos, Depósitos) */}
+                        {['Títulos', 'Depósitos'].map((tipoConta) => {
+                          const contasBancosFiltradas = relatorio.contasBancos.filter(
+                            (cb) => cb.contaNome === tipoConta
+                          );
+                          if (contasBancosFiltradas.length === 0) return null;
+
+                          const subtotalReceitaPrevista = contasBancosFiltradas.reduce(
+                            (acc, cb) => acc + cb.receitaPrevista,
+                            0
+                          );
+                          const subtotalOutrasReceitas = contasBancosFiltradas.reduce(
+                            (acc, cb) => acc + cb.outrasReceitas,
+                            0
+                          );
+
+                          return (
+                            <React.Fragment key={tipoConta}>
+                              <tr className="bg-gray-100 font-bold">
+                                <td className="px-4 py-3" colSpan={4}>{tipoConta}</td>
+                              </tr>
+                              {contasBancosFiltradas.map((cb) => (
+                                <tr key={cb.id}>
+                                  <td className="px-4 py-3 pl-8 text-gray-800">{cb.bancoNome}</td>
+                                  <td className="px-4 py-3 text-right text-gray-700">
+                                    {formatCurrency(cb.receitaPrevista)}
+                                  </td>
+                                  <td className="px-4 py-3 text-right text-gray-700">
+                                    {formatCurrency(cb.outrasReceitas)}
+                                  </td>
+                                  <td className="px-4 py-3 text-right font-semibold text-gray-800">
+                                    {formatCurrency(cb.receitaPrevista + cb.outrasReceitas)}
+                                  </td>
+                                </tr>
+                              ))}
+                              <tr className="bg-gray-50 font-semibold">
+                                <td className="px-4 py-3 pl-8">Subtotal {tipoConta}</td>
+                                <td className="px-4 py-3 text-right">
+                                  {formatCurrency(subtotalReceitaPrevista)}
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  {formatCurrency(subtotalOutrasReceitas)}
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  {formatCurrency(subtotalReceitaPrevista + subtotalOutrasReceitas)}
+                                </td>
+                              </tr>
+                            </React.Fragment>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot className="bg-gray-100 text-sm font-bold text-gray-800 border-t-2 border-gray-400">
+                        <tr>
+                          <td className="px-4 py-3">Total Geral</td>
+                          <td className="px-4 py-3 text-right">
+                            {formatCurrency(relatorio.totais.receitaPrevista)}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {formatCurrency(relatorio.totais.outrasReceitas)}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {formatCurrency(relatorio.totais.realizado)}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="px-4 py-3" colSpan={3}>Valor Previsto</td>
+                          <td className="px-4 py-3 text-right">
+                            {formatCurrency(relatorio.totais.previsto)}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td className="px-4 py-3" colSpan={3}>Percentual Realizado</td>
+                          <td className="px-4 py-3 text-right">
+                            {relatorio.totais.percentual.toFixed(1).replace('.', ',')}%
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </Card>
+
+                <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-2">
+                  {relatorio.contasBancos.map((contaBanco) => (
+                    <Card
+                      key={contaBanco.id}
+                      title={contaBanco.titulo}
+                      subtitle="Tipos de receita com movimentação"
+                    >
+                      {contaBanco.tipos.length === 0 ? (
+                        <p className="text-sm text-gray-500">
+                          Nenhuma receita realizada nesta conta/banco na data selecionada.
+                        </p>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="min-w-full text-sm text-gray-700">
+                            <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                              <tr>
+                                <th className="px-4 py-3 text-left font-semibold">Tipo de Receita</th>
+                                <th className="px-4 py-3 text-right font-semibold">Realizado</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100 bg-white">
+                              {contaBanco.tipos.map((tipo) => (
                                 <tr key={tipo.id}>
                                   <td className="px-4 py-3 font-medium text-gray-800">{tipo.nome}</td>
                                   <td className="px-4 py-3 text-right text-gray-700">
-                                    {ehPrevista ? formatCurrency(tipo.previsto) : '-'}
-                                  </td>
-                                  <td className="px-4 py-3 text-right text-gray-700">{formatCurrency(tipo.realizado)}</td>
-                                  <td
-                                    className={`px-4 py-3 text-right font-semibold ${
-                                      ehPrevista && tipo.diferenca >= 0 ? 'text-success-600' : ehPrevista && tipo.diferenca < 0 ? 'text-error-600' : 'text-gray-700'
-                                    }`}
-                                  >
-                                    {ehPrevista ? formatCurrency(tipo.diferenca) : '-'}
-                                  </td>
-                                  <td className="px-4 py-3 text-right text-gray-700">
-                                    {ehPrevista ? `${tipo.percentual.toFixed(1).replace('.', ',')}%` : '-'}
+                                    {formatCurrency(tipo.realizado)}
                                   </td>
                                 </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </Card>
-                ))}
-              </div>
+                              ))}
+                            </tbody>
+                            <tfoot className="bg-gray-50 font-semibold border-t border-gray-300">
+                              <tr>
+                                <td className="px-4 py-3">Total</td>
+                                <td className="px-4 py-3 text-right">
+                                  {formatCurrency(contaBanco.receitaPrevista + contaBanco.outrasReceitas)}
+                                </td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                      )}
+                    </Card>
+                  ))}
+                </div>
+              </>
             )}
 
-            <Card title="Totais consolidados" subtitle="Resumo final das receitas previstas e realizadas no dia">
-              <div className="space-y-3 text-sm text-gray-700">
-                <div className="flex items-center justify-between">
-                  <span>Receitas realizadas</span>
-                  <span className="font-semibold text-success-700">{formatCurrency(relatorio.totais.realizado)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Valor da previsão de receita</span>
-                  <span className="font-semibold">{formatCurrency(relatorio.totais.previsto)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Diferença entre receita e previsão</span>
-                  <span
-                    className={`font-semibold ${
-                      relatorio.totais.diferenca >= 0 ? 'text-success-700' : 'text-error-600'
-                    }`}
-                  >
-                    {formatCurrency(relatorio.totais.diferenca)}
-                  </span>
-                </div>
+            <Card title="Totais consolidados do dia" subtitle="Resumo final das receitas previstas e realizadas">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm text-gray-700">
+                  <tbody className="divide-y divide-gray-100 bg-white">
+                    <tr>
+                      <td className="px-4 py-3 font-medium text-gray-800">Receitas previstas do dia</td>
+                      <td className="px-4 py-3 text-right font-semibold text-gray-800">
+                        {formatCurrency(relatorio.totais.previsto)}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-3 font-medium text-gray-800">Receitas realizadas do dia</td>
+                      <td className="px-4 py-3 text-right font-semibold text-success-700">
+                        {formatCurrency(relatorio.totais.realizado)}
+                      </td>
+                    </tr>
+                    <tr className="bg-gray-50">
+                      <td className="px-4 py-3 font-bold text-gray-900">Diferença (R$)</td>
+                      <td
+                        className={`px-4 py-3 text-right font-bold ${
+                          relatorio.totais.diferenca >= 0 ? 'text-success-700' : 'text-error-600'
+                        }`}
+                      >
+                        {formatCurrency(relatorio.totais.diferenca)}
+                      </td>
+                    </tr>
+                    <tr className="bg-gray-50">
+                      <td className="px-4 py-3 font-bold text-gray-900">Diferença (%)</td>
+                      <td
+                        className={`px-4 py-3 text-right font-bold ${
+                          relatorio.totais.diferenca >= 0 ? 'text-success-700' : 'text-error-600'
+                        }`}
+                      >
+                        {relatorio.totais.percentual.toFixed(1).replace('.', ',')}%
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </Card>
           </>
