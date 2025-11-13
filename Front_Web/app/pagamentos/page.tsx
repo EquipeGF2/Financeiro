@@ -165,18 +165,27 @@ const SimpleLineChart: React.FC<{
         />
         {[0.25, 0.5, 0.75, 1].map((fracao) => {
           const y = height - paddingY - fracao * (height - paddingY * 2);
+          const valor = maxValor * fracao;
           return (
-            <line
-              // eslint-disable-next-line react/no-array-index-key
-              key={fracao}
-              x1={paddingX}
-              y1={y}
-              x2={width - paddingX}
-              y2={y}
-              stroke="#f1f5f9"
-              strokeWidth={1}
-              strokeDasharray="4 4"
-            />
+            <g key={fracao}>
+              <line
+                x1={paddingX}
+                y1={y}
+                x2={width - paddingX}
+                y2={y}
+                stroke="#f1f5f9"
+                strokeWidth={1}
+                strokeDasharray="4 4"
+              />
+              <text
+                x={paddingX - 6}
+                y={y + 4}
+                textAnchor="end"
+                className="text-[13px] fill-gray-600 font-medium"
+              >
+                {formatCurrency(valor)}
+              </text>
+            </g>
           );
         })}
         {series.map((serie) => {
@@ -222,7 +231,7 @@ const SimpleLineChart: React.FC<{
               x={x}
               y={height - paddingY + 20}
               textAnchor="middle"
-              className="text-[11px] fill-gray-500"
+              className="text-[13px] fill-gray-600 font-medium"
             >
               {label}
             </text>
