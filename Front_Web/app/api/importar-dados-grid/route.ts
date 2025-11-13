@@ -137,6 +137,21 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
+        // PAGAMENTO POR BANCO
+        if (tipoImportacao === 'pagamento_banco') {
+          if (linha.valorRealizado > 0) {
+            const { error: insertError } = await supabase.from('pbk_pagamentos_banco').insert({
+              pbk_data: data,
+              pbk_ban_id: mapeamentoId,
+              pbk_valor: linha.valorRealizado,
+              pbk_usr_id: usuario.usr_id,
+            });
+            if (insertError) throw insertError;
+            sucesso++;
+          }
+          continue;
+        }
+
         // RECEITA POR TIPO (REALIZADO)
         if (tipoImportacao === 'receita_tipo') {
           if (linha.valorRealizado > 0) {
