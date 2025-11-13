@@ -44,6 +44,33 @@ async function buscarAreaExistente(
   }
 }
 
+// Função para buscar todas as áreas do usuário para sugestão
+async function listarAreasDisponiveis(
+  supabase: any,
+  usrId: string
+): Promise<string[]> {
+  try {
+    const { data: areas, error } = await supabase
+      .from('are_areas')
+      .select('are_nome')
+      .eq('are_usr_id', usrId)
+      .eq('are_ativo', true)
+      .gte('are_id', 2)
+      .lte('are_id', 15)
+      .order('are_nome');
+
+    if (error) {
+      console.error('[listarAreasDisponiveis] Erro:', error);
+      return [];
+    }
+
+    return (areas || []).map((a: any) => a.are_nome);
+  } catch (err) {
+    console.error('[listarAreasDisponiveis] Exceção:', err);
+    return [];
+  }
+}
+
 function converterData(data: string): string | null {
   if (!data) return null;
 
@@ -113,6 +140,9 @@ export async function POST(request: NextRequest) {
     let erro = 0;
     const erros: string[] = [];
 
+    // Busca áreas disponíveis para sugestão
+    const areasDisponiveis = await listarAreasDisponiveis(supabase, usuario.usr_id);
+
     // Processa cada linha
     for (const linha of linhas) {
       try {
@@ -135,7 +165,10 @@ export async function POST(request: NextRequest) {
             const areId = await buscarAreaExistente(supabase, linha.area, usuario.usr_id);
 
             if (!areId) {
-              erros.push(`Erro na linha "${linha.area}": Área não encontrada. Por favor, cadastre a área antes de importar.`);
+              const sugestao = areasDisponiveis.length > 0
+                ? ` Áreas disponíveis: ${areasDisponiveis.join(', ')}`
+                : ' Por favor, cadastre a área antes de importar.';
+              erros.push(`Erro na linha "${linha.area}": Área não encontrada.${sugestao}`);
               erro++;
               continue;
             }
@@ -159,7 +192,10 @@ export async function POST(request: NextRequest) {
             const areId = await buscarAreaExistente(supabase, linha.area, usuario.usr_id);
 
             if (!areId) {
-              erros.push(`Erro na linha "${linha.area}": Área não encontrada. Por favor, cadastre a área antes de importar.`);
+              const sugestao = areasDisponiveis.length > 0
+                ? ` Áreas disponíveis: ${areasDisponiveis.join(', ')}`
+                : ' Por favor, cadastre a área antes de importar.';
+              erros.push(`Erro na linha "${linha.area}": Área não encontrada.${sugestao}`);
               erro++;
               continue;
             }
