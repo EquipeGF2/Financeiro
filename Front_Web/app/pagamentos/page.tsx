@@ -135,14 +135,16 @@ const SimpleLineChart: React.FC<{
   series: SerieLinha[];
   legenda?: boolean;
 }> = ({ labels, series, legenda = true }) => {
-  const width = 900;
-  const height = 360;
-  const paddingX = 48;
-  const paddingY = 32;
+  const width = 1100;
+  const height = 480;
+  const paddingX = 80;
+  const paddingY = 50;
   const passoX = labels.length > 1 ? (width - paddingX * 2) / (labels.length - 1) : 0;
   const valores = series.flatMap((serie) => serie.values);
   const maxValor = valores.length ? Math.max(...valores) : 0;
-  const escalaY = maxValor > 0 ? (height - paddingY * 2) / maxValor : 0;
+  // Arredondar para o próximo múltiplo de 20000
+  const maxValorArredondado = Math.ceil(maxValor / 20000) * 20000;
+  const escalaY = maxValorArredondado > 0 ? (height - paddingY * 2) / maxValorArredondado : 0;
 
   return (
     <div className="space-y-3 w-full">
@@ -163,11 +165,12 @@ const SimpleLineChart: React.FC<{
           stroke="#d1d5db"
           strokeWidth={1}
         />
-        {[0.25, 0.5, 0.75, 1].map((fracao) => {
+        {Array.from({ length: Math.floor(maxValorArredondado / 20000) + 1 }, (_, i) => i).map((step) => {
+          const valor = step * 20000;
+          const fracao = maxValorArredondado > 0 ? valor / maxValorArredondado : 0;
           const y = height - paddingY - fracao * (height - paddingY * 2);
-          const valor = maxValor * fracao;
           return (
-            <g key={fracao}>
+            <g key={step}>
               <line
                 x1={paddingX}
                 y1={y}
@@ -191,7 +194,7 @@ const SimpleLineChart: React.FC<{
         {series.map((serie) => {
           const pontos = serie.values.map((valor, index) => {
             const x = paddingX + passoX * index;
-            const y = maxValor > 0 ? height - paddingY - valor * escalaY : height - paddingY;
+            const y = maxValorArredondado > 0 ? height - paddingY - valor * escalaY : height - paddingY;
             return `${x},${y}`;
           });
           return (
@@ -205,7 +208,7 @@ const SimpleLineChart: React.FC<{
               />
               {serie.values.map((valor, index) => {
                 const x = paddingX + passoX * index;
-                const y = maxValor > 0 ? height - paddingY - valor * escalaY : height - paddingY;
+                const y = maxValorArredondado > 0 ? height - paddingY - valor * escalaY : height - paddingY;
                 return (
                   <circle
                     // eslint-disable-next-line react/no-array-index-key
