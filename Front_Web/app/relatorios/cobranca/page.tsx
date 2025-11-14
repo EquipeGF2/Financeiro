@@ -426,7 +426,10 @@ const RelatorioCobrancaPage: React.FC = () => {
           }
 
           // Identificar se é Receita Prevista ou Outras Receitas baseado no TIPO
-          const ehReceitaPrevista = tipoNome.includes('RECEITA PREVISTA') || tipoNome.includes('PREVISTA');
+          // Receita Prevista: tipos que contêm "RECEITA PREVISTA" MAS NÃO são adiantados ou atrasados
+          const ehReceitaPrevista = (tipoNome.includes('RECEITA PREVISTA') || tipoNome.includes('PREVISTA'))
+            && !tipoNome.includes('ADIANTADO')
+            && !tipoNome.includes('ATRASADO');
 
           const banco = bancosCategorizadosMap.get(conta.bancoId) ?? {
             nome: conta.bancoNome,
