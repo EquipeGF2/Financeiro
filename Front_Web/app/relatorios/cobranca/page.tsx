@@ -580,11 +580,14 @@ const RelatorioCobrancaPage: React.FC = () => {
         ['Outras Receitas', formatCurrency(0)],
       ],
       foot: [['Total', formatCurrency(relatorio.totais.titulosTotal)]],
-      styles: { fontSize: 8, halign: 'right', cellPadding: 1.5 },
+      theme: 'grid',
+      styles: { fontSize: 8, halign: 'right', cellPadding: 1.5, lineWidth: 0.5, lineColor: [0, 0, 0] },
       headStyles: { fillColor: [31, 73, 125], textColor: 255, fontStyle: 'bold', fontSize: 8 },
       columnStyles: { 0: { halign: 'left' } },
       footStyles: { fontStyle: 'bold', fillColor: [240, 248, 255] },
       margin: { left: margem, right: larguraPagina / 2 + 2 },
+      tableLineWidth: 0.5,
+      tableLineColor: [0, 0, 0],
     });
 
     const titulosFinalY = (doc as any).lastAutoTable.finalY;
@@ -602,11 +605,14 @@ const RelatorioCobrancaPage: React.FC = () => {
         ['Outras Receitas', formatCurrency(0)],
       ],
       foot: [['Total', formatCurrency(relatorio.totais.depositosTotal)]],
-      styles: { fontSize: 8, halign: 'right', cellPadding: 1.5 },
+      theme: 'grid',
+      styles: { fontSize: 8, halign: 'right', cellPadding: 1.5, lineWidth: 0.5, lineColor: [0, 0, 0] },
       headStyles: { fillColor: [34, 139, 34], textColor: 255, fontStyle: 'bold', fontSize: 8 },
       columnStyles: { 0: { halign: 'left' } },
       footStyles: { fontStyle: 'bold', fillColor: [240, 255, 240] },
       margin: { left: larguraPagina / 2 + 2, right: margem },
+      tableLineWidth: 0.5,
+      tableLineColor: [0, 0, 0],
     });
 
     posY = Math.max(titulosFinalY, (doc as any).lastAutoTable.finalY) + 8;
@@ -632,12 +638,15 @@ const RelatorioCobrancaPage: React.FC = () => {
           head: [[banco.nome, '']],
           body: banco.titulos.tipos.map(tipo => [tipo.tipoNome, formatCurrency(tipo.valor)]),
           foot: [['Total', formatCurrency(banco.titulos.total)]],
-          styles: { fontSize: 7, halign: 'right', cellPadding: 1 },
+          theme: 'grid',
+          styles: { fontSize: 7, halign: 'right', cellPadding: 1, lineWidth: 0.5, lineColor: [0, 0, 0] },
           headStyles: { fillColor: [31, 73, 125], textColor: 255, fontStyle: 'bold', fontSize: 7 },
           columnStyles: { 0: { halign: 'left' } },
           footStyles: { fontStyle: 'bold', fontSize: 7 },
           margin: { left: colX, right: larguraPagina - colX - colWidth },
           tableWidth: colWidth,
+          tableLineWidth: 0.5,
+          tableLineColor: [0, 0, 0],
         });
       });
 
@@ -665,12 +674,15 @@ const RelatorioCobrancaPage: React.FC = () => {
           head: [[banco.nome, '']],
           body: banco.depositos.tipos.map(tipo => [tipo.tipoNome, formatCurrency(tipo.valor)]),
           foot: [['Total', formatCurrency(banco.depositos.total)]],
-          styles: { fontSize: 7, halign: 'right', cellPadding: 1 },
+          theme: 'grid',
+          styles: { fontSize: 7, halign: 'right', cellPadding: 1, lineWidth: 0.5, lineColor: [0, 0, 0] },
           headStyles: { fillColor: [34, 139, 34], textColor: 255, fontStyle: 'bold', fontSize: 7 },
           columnStyles: { 0: { halign: 'left' } },
           footStyles: { fontStyle: 'bold', fontSize: 7 },
           margin: { left: colX, right: larguraPagina - colX - colWidth },
           tableWidth: colWidth,
+          tableLineWidth: 0.5,
+          tableLineColor: [0, 0, 0],
         });
       });
 
@@ -690,9 +702,12 @@ const RelatorioCobrancaPage: React.FC = () => {
         ['Receita Realizada', formatCurrency(relatorio.totais.realizado)],
         ['% de Cobertura', `${relatorio.totais.previsto > 0 ? ((relatorio.totais.realizado / relatorio.totais.previsto) * 100).toFixed(1) : '0'}%`],
       ],
-      styles: { fontSize: 9, halign: 'right', cellPadding: 2, fontStyle: 'bold' },
+      theme: 'grid',
+      styles: { fontSize: 9, halign: 'right', cellPadding: 2, fontStyle: 'bold', lineWidth: 0.5, lineColor: [0, 0, 0] },
       columnStyles: { 0: { halign: 'left', fontStyle: 'bold' }, 1: { fontStyle: 'bold' } },
       margin: { left: margem, right: margem },
+      tableLineWidth: 0.5,
+      tableLineColor: [0, 0, 0],
     });
 
     return doc;
