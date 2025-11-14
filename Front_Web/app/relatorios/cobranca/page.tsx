@@ -556,7 +556,73 @@ const RelatorioCobrancaPage: React.FC = () => {
     doc.setFontSize(9);
     doc.text(`Data: ${formatarDataPt(relatorio.data)}`, margem, 18);
 
-    let posY = 26;
+    let posY = 24;
+
+    // ============ INDICADORES SUPERIORES ============
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('Indicadores do Dia', margem, posY);
+    posY += 2;
+
+    const cardWidth = larguraUtil / 3 - 2;
+    const cardHeight = 18;
+
+    // Card 1: Previsto
+    doc.setDrawColor(59, 130, 246); // blue
+    doc.setFillColor(239, 246, 255); // blue-50
+    doc.roundedRect(margem, posY, cardWidth, cardHeight, 2, 2, 'FD');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(55, 65, 81); // gray-700
+    doc.text('PREVISTO', margem + 2, posY + 4);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(30, 64, 175); // blue-800
+    doc.text(formatCurrency(relatorio.totais.previsto), margem + 2, posY + 10);
+
+    // Card 2: Realizado
+    const card2X = margem + cardWidth + 3;
+    doc.setDrawColor(34, 197, 94); // green
+    doc.setFillColor(240, 253, 244); // green-50
+    doc.roundedRect(card2X, posY, cardWidth, cardHeight, 2, 2, 'FD');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(55, 65, 81);
+    doc.text('REALIZADO', card2X + 2, posY + 4);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11);
+    doc.setTextColor(21, 128, 61); // green-700
+    doc.text(formatCurrency(relatorio.totais.realizado), card2X + 2, posY + 10);
+
+    // Card 3: Cobertura
+    const card3X = card2X + cardWidth + 3;
+    const cobertura = relatorio.totais.previsto > 0
+      ? ((relatorio.totais.realizado / relatorio.totais.previsto) * 100).toFixed(1)
+      : '0.0';
+    doc.setDrawColor(147, 51, 234); // purple
+    doc.setFillColor(250, 245, 255); // purple-50
+    doc.roundedRect(card3X, posY, cardWidth, cardHeight, 2, 2, 'FD');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(55, 65, 81);
+    doc.text('% COBERTURA', card3X + 2, posY + 4);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.setTextColor(126, 34, 206); // purple-700
+    doc.text(`${cobertura}%`, card3X + 2, posY + 11);
+
+    // Linha divisória adicional nos cards
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6);
+    doc.setTextColor(107, 114, 128); // gray-500
+    doc.text('Títulos + Depósitos', margem + 2, posY + 15);
+    doc.text('Total do dia', card2X + 2, posY + 15);
+    doc.text('Meta alcançada', card3X + 2, posY + 15);
+
+    // Reset colors
+    doc.setTextColor(0, 0, 0);
+
+    posY += cardHeight + 8;
 
     // Seção: Resumo por Conta de Receita
     doc.setFont('helvetica', 'bold');
@@ -617,7 +683,7 @@ const RelatorioCobrancaPage: React.FC = () => {
 
     posY = Math.max(titulosFinalY, (doc as any).lastAutoTable.finalY) + 8;
 
-    // Seção: Receitas em Títulos (bancos lado a lado)
+    // Seção: Receitas em Títulos (bancos lado a lado - CARDS UNIFORMES)
     const temTitulos = relatorio.bancosCategorizado.some(b => b.titulos.total > 0);
     if (temTitulos) {
       doc.setFont('helvetica', 'bold');
@@ -626,23 +692,29 @@ const RelatorioCobrancaPage: React.FC = () => {
       posY += 4;
 
       const bancosComTitulos = relatorio.bancosCategorizado.filter(b => b.titulos.total > 0);
-      const numColunas = Math.min(bancosComTitulos.length, 3);
-      const colWidth = larguraUtil / numColunas - 2;
+
+      // Cards uniformes em grid fixo de 3 colunas
+      const numColunas = 3;
+      const colWidth = (larguraUtil - 4) / numColunas; // 4mm de gaps entre cards
+      const cardHeightUniforme = 35; // Altura fixa para todos os cards
 
       bancosComTitulos.forEach((banco, index) => {
-        const colX = margem + (colWidth + 2) * (index % numColunas);
-        const startYPos = posY;
+        const row = Math.floor(index / numColunas);
+        const col = index % numColunas;
+        const colX = margem + (colWidth + 2) * col;
+        const startYPos = posY + (row * (cardHeightUniforme + 3));
 
+        // Usar autoTable mas com altura mínima definida
         autoTable(doc, {
           startY: startYPos,
           head: [[banco.nome, '']],
           body: banco.titulos.tipos.map(tipo => [tipo.tipoNome, formatCurrency(tipo.valor)]),
           foot: [['Total', formatCurrency(banco.titulos.total)]],
           theme: 'grid',
-          styles: { fontSize: 7, halign: 'right', cellPadding: 1, lineWidth: 0.5, lineColor: [0, 0, 0] },
-          headStyles: { fillColor: [31, 73, 125], textColor: 255, fontStyle: 'bold', fontSize: 7 },
-          columnStyles: { 0: { halign: 'left' } },
-          footStyles: { fontStyle: 'bold', fontSize: 7 },
+          styles: { fontSize: 7, halign: 'right', cellPadding: 1.5, lineWidth: 0.5, lineColor: [0, 0, 0] },
+          headStyles: { fillColor: [31, 73, 125], textColor: 255, fontStyle: 'bold', fontSize: 8, halign: 'center' },
+          columnStyles: { 0: { halign: 'left', cellWidth: colWidth * 0.6 } },
+          footStyles: { fontStyle: 'bold', fontSize: 8, fillColor: [240, 248, 255] },
           margin: { left: colX, right: larguraPagina - colX - colWidth },
           tableWidth: colWidth,
           tableLineWidth: 0.5,
@@ -650,10 +722,12 @@ const RelatorioCobrancaPage: React.FC = () => {
         });
       });
 
-      posY = (doc as any).lastAutoTable.finalY + 6;
+      // Calcular próxima posição baseada no número de linhas de cards
+      const numLinhas = Math.ceil(bancosComTitulos.length / numColunas);
+      posY += (numLinhas * (cardHeightUniforme + 3)) + 4;
     }
 
-    // Seção: Receitas em Depósitos (bancos lado a lado)
+    // Seção: Receitas em Depósitos (bancos lado a lado - CARDS UNIFORMES)
     const temDepositos = relatorio.bancosCategorizado.some(b => b.depositos.total > 0);
     if (temDepositos) {
       doc.setFont('helvetica', 'bold');
@@ -662,12 +736,17 @@ const RelatorioCobrancaPage: React.FC = () => {
       posY += 4;
 
       const bancosComDepositos = relatorio.bancosCategorizado.filter(b => b.depositos.total > 0);
-      const numColunas = Math.min(bancosComDepositos.length, 3);
-      const colWidth = larguraUtil / numColunas - 2;
+
+      // Cards uniformes em grid fixo de 3 colunas
+      const numColunas = 3;
+      const colWidth = (larguraUtil - 4) / numColunas;
+      const cardHeightUniforme = 35;
 
       bancosComDepositos.forEach((banco, index) => {
-        const colX = margem + (colWidth + 2) * (index % numColunas);
-        const startYPos = posY;
+        const row = Math.floor(index / numColunas);
+        const col = index % numColunas;
+        const colX = margem + (colWidth + 2) * col;
+        const startYPos = posY + (row * (cardHeightUniforme + 3));
 
         autoTable(doc, {
           startY: startYPos,
@@ -675,10 +754,10 @@ const RelatorioCobrancaPage: React.FC = () => {
           body: banco.depositos.tipos.map(tipo => [tipo.tipoNome, formatCurrency(tipo.valor)]),
           foot: [['Total', formatCurrency(banco.depositos.total)]],
           theme: 'grid',
-          styles: { fontSize: 7, halign: 'right', cellPadding: 1, lineWidth: 0.5, lineColor: [0, 0, 0] },
-          headStyles: { fillColor: [34, 139, 34], textColor: 255, fontStyle: 'bold', fontSize: 7 },
-          columnStyles: { 0: { halign: 'left' } },
-          footStyles: { fontStyle: 'bold', fontSize: 7 },
+          styles: { fontSize: 7, halign: 'right', cellPadding: 1.5, lineWidth: 0.5, lineColor: [0, 0, 0] },
+          headStyles: { fillColor: [34, 139, 34], textColor: 255, fontStyle: 'bold', fontSize: 8, halign: 'center' },
+          columnStyles: { 0: { halign: 'left', cellWidth: colWidth * 0.6 } },
+          footStyles: { fontStyle: 'bold', fontSize: 8, fillColor: [240, 255, 240] },
           margin: { left: colX, right: larguraPagina - colX - colWidth },
           tableWidth: colWidth,
           tableLineWidth: 0.5,
@@ -686,7 +765,8 @@ const RelatorioCobrancaPage: React.FC = () => {
         });
       });
 
-      posY = (doc as any).lastAutoTable.finalY + 6;
+      const numLinhas = Math.ceil(bancosComDepositos.length / numColunas);
+      posY += (numLinhas * (cardHeightUniforme + 3)) + 4;
     }
 
     // Seção: Total Previsto x Realizado
