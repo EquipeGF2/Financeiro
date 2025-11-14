@@ -583,19 +583,13 @@ const RelatorioPrevisaoSemanalPage: React.FC = () => {
         doc.text('RECEITAS', 14, yPos);
         yPos += 5;
 
-        // Calcular larguras dinamicamente
-        const larguraUtil = 210 - 14 - 14; // 182mm
-        const larguraCategoria = 70;
-        const numColunasValor = headers.length - 1; // Excluindo categoria
-        const larguraColValor = (larguraUtil - larguraCategoria) / numColunasValor;
-
         // Configurar estilos de coluna para centralizar datas e total
         const columnStylesReceitas: any = {
-          0: { halign: 'left', cellWidth: larguraCategoria },
+          0: { halign: 'left' },
         };
-        // Centralizar todas as colunas de data (1 até length-2) e a coluna total (length-1)
+        // Centralizar todas as colunas de data e total
         for (let i = 1; i < headers.length; i++) {
-          columnStylesReceitas[i] = { halign: 'center', cellWidth: larguraColValor };
+          columnStylesReceitas[i] = { halign: 'center' };
           if (i === headers.length - 1) {
             columnStylesReceitas[i].fontStyle = 'bold';
           }
@@ -607,9 +601,10 @@ const RelatorioPrevisaoSemanalPage: React.FC = () => {
           body: receitasData,
           headStyles: { fillColor: [34, 197, 94], textColor: 255, fontStyle: 'bold', fontSize: 9, halign: 'center' },
           bodyStyles: { fontSize: 8 },
-          margin: { left: 14, right: 14 },
+          margin: { left: 10, right: 10 },
+          tableWidth: 'auto',
           theme: 'grid',
-          styles: { cellPadding: 1, lineWidth: 0.1, lineColor: [0, 0, 0] },
+          styles: { cellPadding: 1, lineWidth: 0.1, lineColor: [0, 0, 0], overflow: 'linebreak', minCellWidth: 10 },
           columnStyles: columnStylesReceitas,
           tableLineWidth: 0.5,
           tableLineColor: [0, 0, 0],
@@ -634,19 +629,13 @@ const RelatorioPrevisaoSemanalPage: React.FC = () => {
         doc.text('GASTOS', 14, yPos);
         yPos += 5;
 
-        // Calcular larguras dinamicamente
-        const larguraUtil = 210 - 14 - 14; // 182mm
-        const larguraCategoria = 70;
-        const numColunasValor = headers.length - 1; // Excluindo categoria
-        const larguraColValor = (larguraUtil - larguraCategoria) / numColunasValor;
-
         // Configurar estilos de coluna para centralizar datas e total
         const columnStylesDespesas: any = {
-          0: { halign: 'left', cellWidth: larguraCategoria },
+          0: { halign: 'left' },
         };
-        // Centralizar todas as colunas de data (1 até length-2) e a coluna total (length-1)
+        // Centralizar todas as colunas de data e total
         for (let i = 1; i < headers.length; i++) {
-          columnStylesDespesas[i] = { halign: 'center', cellWidth: larguraColValor };
+          columnStylesDespesas[i] = { halign: 'center' };
           if (i === headers.length - 1) {
             columnStylesDespesas[i].fontStyle = 'bold';
           }
@@ -658,9 +647,10 @@ const RelatorioPrevisaoSemanalPage: React.FC = () => {
           body: despesasData,
           headStyles: { fillColor: [239, 68, 68], textColor: 255, fontStyle: 'bold', fontSize: 9, halign: 'center' },
           bodyStyles: { fontSize: 8 },
-          margin: { left: 14, right: 14 },
+          margin: { left: 10, right: 10 },
+          tableWidth: 'auto',
           theme: 'grid',
-          styles: { cellPadding: 1, lineWidth: 0.1, lineColor: [0, 0, 0] },
+          styles: { cellPadding: 1, lineWidth: 0.1, lineColor: [0, 0, 0], overflow: 'linebreak', minCellWidth: 10 },
           columnStyles: columnStylesDespesas,
           tableLineWidth: 0.5,
           tableLineColor: [0, 0, 0],
@@ -685,19 +675,13 @@ const RelatorioPrevisaoSemanalPage: React.FC = () => {
         doc.text('SALDOS', 14, yPos);
         yPos += 5;
 
-        // Calcular larguras dinamicamente
-        const larguraUtil = 210 - 14 - 14; // 182mm
-        const larguraCategoria = 70;
-        const numColunasValor = headers.length - 1; // Excluindo categoria
-        const larguraColValor = (larguraUtil - larguraCategoria) / numColunasValor;
-
         // Configurar estilos de coluna para centralizar datas e total
         const columnStylesSaldos: any = {
-          0: { halign: 'left', cellWidth: larguraCategoria },
+          0: { halign: 'left' },
         };
-        // Centralizar todas as colunas de data (1 até length-2) e a coluna total (length-1)
+        // Centralizar todas as colunas de data e total
         for (let i = 1; i < headers.length; i++) {
-          columnStylesSaldos[i] = { halign: 'center', cellWidth: larguraColValor };
+          columnStylesSaldos[i] = { halign: 'center' };
           if (i === headers.length - 1) {
             columnStylesSaldos[i].fontStyle = 'bold';
           }
@@ -709,9 +693,10 @@ const RelatorioPrevisaoSemanalPage: React.FC = () => {
           body: saldosData,
           headStyles: { fillColor: [100, 116, 139], textColor: 255, fontStyle: 'bold', fontSize: 9, halign: 'center' },
           bodyStyles: { fontSize: 8 },
-          margin: { left: 14, right: 14 },
+          margin: { left: 10, right: 10 },
+          tableWidth: 'auto',
           theme: 'grid',
-          styles: { cellPadding: 1, lineWidth: 0.1, lineColor: [0, 0, 0] },
+          styles: { cellPadding: 1, lineWidth: 0.1, lineColor: [0, 0, 0], overflow: 'linebreak', minCellWidth: 10 },
           columnStyles: columnStylesSaldos,
           tableLineWidth: 0.5,
           tableLineColor: [0, 0, 0],
