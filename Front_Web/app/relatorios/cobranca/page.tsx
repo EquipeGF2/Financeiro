@@ -67,7 +67,10 @@ type TipoValor = {
 };
 
 type CategoriaResumo = {
-  tipos: TipoValor[];
+  tiposReceitaPrevista: TipoValor[];
+  tiposOutrasReceitas: TipoValor[];
+  totalReceitaPrevista: number;
+  totalOutrasReceitas: number;
   total: number;
 };
 
@@ -87,7 +90,11 @@ type RelatorioCobranca = {
     realizado: number;
     diferenca: number;
     titulosTotal: number;
+    titulosTotalReceitaPrevista: number;
+    titulosTotalOutrasReceitas: number;
     depositosTotal: number;
+    depositosTotalReceitaPrevista: number;
+    depositosTotalOutrasReceitas: number;
     percentualTitulos: number;
     percentualDepositos: number;
   };
@@ -397,8 +404,10 @@ const RelatorioCobrancaPage: React.FC = () => {
         // Processar categorização por Títulos e Depósitos
         type BancoCategoriaAcumulado = {
           nome: string;
-          titulos: Map<string, { tipoNome: string; valor: number }>;
-          depositos: Map<string, { tipoNome: string; valor: number }>;
+          titulosReceitaPrevista: Map<string, { tipoNome: string; valor: number }>;
+          titulosOutrasReceitas: Map<string, { tipoNome: string; valor: number }>;
+          depositosReceitaPrevista: Map<string, { tipoNome: string; valor: number }>;
+          depositosOutrasReceitas: Map<string, { tipoNome: string; valor: number }>;
         };
 
         const bancosCategorizadosMap = new Map<string, BancoCategoriaAcumulado>();
@@ -406,6 +415,7 @@ const RelatorioCobrancaPage: React.FC = () => {
         contasMap.forEach((conta) => {
           const contaCodigo = toString(conta.contaCodigo);
           const contaNome = toString(conta.contaNome).toUpperCase();
+          const tipoNome = toString(conta.tipoNome).toUpperCase();
 
           // Identificar se é Títulos ou Depósitos baseado no código ou nome da CONTA DE RECEITA
           const ehTitulos = contaNome.includes('TÍTULO') || contaNome.includes('TITULO') || contaCodigo.startsWith('301');
@@ -415,26 +425,49 @@ const RelatorioCobrancaPage: React.FC = () => {
             return; // Ignora contas que não são Títulos nem Depósitos
           }
 
+          // Identificar se é Receita Prevista ou Outras Receitas baseado no TIPO
+          const ehReceitaPrevista = tipoNome.includes('RECEITA PREVISTA') || tipoNome.includes('PREVISTA');
+
           const banco = bancosCategorizadosMap.get(conta.bancoId) ?? {
             nome: conta.bancoNome,
-            titulos: new Map(),
-            depositos: new Map(),
+            titulosReceitaPrevista: new Map(),
+            titulosOutrasReceitas: new Map(),
+            depositosReceitaPrevista: new Map(),
+            depositosOutrasReceitas: new Map(),
           };
 
           if (ehTitulos) {
-            const tipoExistente = banco.titulos.get(conta.tipoId) ?? {
-              tipoNome: conta.tipoNome,
-              valor: 0,
-            };
-            tipoExistente.valor += conta.realizado;
-            banco.titulos.set(conta.tipoId, tipoExistente);
+            if (ehReceitaPrevista) {
+              const tipoExistente = banco.titulosReceitaPrevista.get(conta.tipoId) ?? {
+                tipoNome: conta.tipoNome,
+                valor: 0,
+              };
+              tipoExistente.valor += conta.realizado;
+              banco.titulosReceitaPrevista.set(conta.tipoId, tipoExistente);
+            } else {
+              const tipoExistente = banco.titulosOutrasReceitas.get(conta.tipoId) ?? {
+                tipoNome: conta.tipoNome,
+                valor: 0,
+              };
+              tipoExistente.valor += conta.realizado;
+              banco.titulosOutrasReceitas.set(conta.tipoId, tipoExistente);
+            }
           } else if (ehDepositos) {
-            const tipoExistente = banco.depositos.get(conta.tipoId) ?? {
-              tipoNome: conta.tipoNome,
-              valor: 0,
-            };
-            tipoExistente.valor += conta.realizado;
-            banco.depositos.set(conta.tipoId, tipoExistente);
+            if (ehReceitaPrevista) {
+              const tipoExistente = banco.depositosReceitaPrevista.get(conta.tipoId) ?? {
+                tipoNome: conta.tipoNome,
+                valor: 0,
+              };
+              tipoExistente.valor += conta.realizado;
+              banco.depositosReceitaPrevista.set(conta.tipoId, tipoExistente);
+            } else {
+              const tipoExistente = banco.depositosOutrasReceitas.get(conta.tipoId) ?? {
+                tipoNome: conta.tipoNome,
+                valor: 0,
+              };
+              tipoExistente.valor += conta.realizado;
+              banco.depositosOutrasReceitas.set(conta.tipoId, tipoExistente);
+            }
           }
 
           bancosCategorizadosMap.set(conta.bancoId, banco);
@@ -442,7 +475,8 @@ const RelatorioCobrancaPage: React.FC = () => {
 
         const bancosCategorizado: BancoCategorizado[] = Array.from(bancosCategorizadosMap.entries())
           .map(([id, banco]) => {
-            const titulosTipos: TipoValor[] = Array.from(banco.titulos.entries())
+            // Títulos - Receita Prevista
+            const titulosReceitaPrevistaTipos: TipoValor[] = Array.from(banco.titulosReceitaPrevista.entries())
               .map(([tipoId, tipo]) => ({
                 tipoId,
                 tipoNome: tipo.tipoNome,
@@ -451,7 +485,8 @@ const RelatorioCobrancaPage: React.FC = () => {
               .filter(t => t.valor > 0)
               .sort((a, b) => b.valor - a.valor);
 
-            const depositosTipos: TipoValor[] = Array.from(banco.depositos.entries())
+            // Títulos - Outras Receitas
+            const titulosOutrasReceitasTipos: TipoValor[] = Array.from(banco.titulosOutrasReceitas.entries())
               .map(([tipoId, tipo]) => ({
                 tipoId,
                 tipoNome: tipo.tipoNome,
@@ -459,17 +494,48 @@ const RelatorioCobrancaPage: React.FC = () => {
               }))
               .filter(t => t.valor > 0)
               .sort((a, b) => b.valor - a.valor);
+
+            // Depósitos - Receita Prevista
+            const depositosReceitaPrevistaTipos: TipoValor[] = Array.from(banco.depositosReceitaPrevista.entries())
+              .map(([tipoId, tipo]) => ({
+                tipoId,
+                tipoNome: tipo.tipoNome,
+                valor: arredondar(tipo.valor),
+              }))
+              .filter(t => t.valor > 0)
+              .sort((a, b) => b.valor - a.valor);
+
+            // Depósitos - Outras Receitas
+            const depositosOutrasReceitasTipos: TipoValor[] = Array.from(banco.depositosOutrasReceitas.entries())
+              .map(([tipoId, tipo]) => ({
+                tipoId,
+                tipoNome: tipo.tipoNome,
+                valor: arredondar(tipo.valor),
+              }))
+              .filter(t => t.valor > 0)
+              .sort((a, b) => b.valor - a.valor);
+
+            const titulosTotalReceitaPrevista = arredondar(titulosReceitaPrevistaTipos.reduce((sum, t) => sum + t.valor, 0));
+            const titulosTotalOutrasReceitas = arredondar(titulosOutrasReceitasTipos.reduce((sum, t) => sum + t.valor, 0));
+            const depositosTotalReceitaPrevista = arredondar(depositosReceitaPrevistaTipos.reduce((sum, t) => sum + t.valor, 0));
+            const depositosTotalOutrasReceitas = arredondar(depositosOutrasReceitasTipos.reduce((sum, t) => sum + t.valor, 0));
 
             return {
               id,
               nome: banco.nome,
               titulos: {
-                tipos: titulosTipos,
-                total: arredondar(titulosTipos.reduce((sum, t) => sum + t.valor, 0)),
+                tiposReceitaPrevista: titulosReceitaPrevistaTipos,
+                tiposOutrasReceitas: titulosOutrasReceitasTipos,
+                totalReceitaPrevista: titulosTotalReceitaPrevista,
+                totalOutrasReceitas: titulosTotalOutrasReceitas,
+                total: arredondar(titulosTotalReceitaPrevista + titulosTotalOutrasReceitas),
               },
               depositos: {
-                tipos: depositosTipos,
-                total: arredondar(depositosTipos.reduce((sum, t) => sum + t.valor, 0)),
+                tiposReceitaPrevista: depositosReceitaPrevistaTipos,
+                tiposOutrasReceitas: depositosOutrasReceitasTipos,
+                totalReceitaPrevista: depositosTotalReceitaPrevista,
+                totalOutrasReceitas: depositosTotalOutrasReceitas,
+                total: arredondar(depositosTotalReceitaPrevista + depositosTotalOutrasReceitas),
               },
             };
           })
@@ -480,12 +546,23 @@ const RelatorioCobrancaPage: React.FC = () => {
         const totalRealizado = arredondar(bancos.reduce((acc, banco) => acc + banco.realizado, 0));
         const diferenca = arredondar(totalRealizado - totalPrevisto);
 
-        const titulosTotal = arredondar(
-          bancosCategorizado.reduce((acc, b) => acc + b.titulos.total, 0)
+        // Calcular totais separados por categoria (receita prevista vs outras receitas)
+        const titulosTotalReceitaPrevista = arredondar(
+          bancosCategorizado.reduce((acc, b) => acc + b.titulos.totalReceitaPrevista, 0)
         );
-        const depositosTotal = arredondar(
-          bancosCategorizado.reduce((acc, b) => acc + b.depositos.total, 0)
+        const titulosTotalOutrasReceitas = arredondar(
+          bancosCategorizado.reduce((acc, b) => acc + b.titulos.totalOutrasReceitas, 0)
         );
+        const titulosTotal = arredondar(titulosTotalReceitaPrevista + titulosTotalOutrasReceitas);
+
+        const depositosTotalReceitaPrevista = arredondar(
+          bancosCategorizado.reduce((acc, b) => acc + b.depositos.totalReceitaPrevista, 0)
+        );
+        const depositosTotalOutrasReceitas = arredondar(
+          bancosCategorizado.reduce((acc, b) => acc + b.depositos.totalOutrasReceitas, 0)
+        );
+        const depositosTotal = arredondar(depositosTotalReceitaPrevista + depositosTotalOutrasReceitas);
+
         const totalCategorizado = titulosTotal + depositosTotal;
         const percentualTitulos = totalCategorizado > 0 ? arredondar((titulosTotal / totalCategorizado) * 100) : 0;
         const percentualDepositos = totalCategorizado > 0 ? arredondar((depositosTotal / totalCategorizado) * 100) : 0;
@@ -499,7 +576,11 @@ const RelatorioCobrancaPage: React.FC = () => {
             realizado: totalRealizado,
             diferenca,
             titulosTotal,
+            titulosTotalReceitaPrevista,
+            titulosTotalOutrasReceitas,
             depositosTotal,
+            depositosTotalReceitaPrevista,
+            depositosTotalOutrasReceitas,
             percentualTitulos,
             percentualDepositos,
           },
@@ -642,8 +723,8 @@ const RelatorioCobrancaPage: React.FC = () => {
       startY: posY + 2,
       head: [['Item', 'Valor']],
       body: [
-        ['Receita Prevista', formatCurrency(relatorio.totais.titulosTotal)],
-        ['Outras Receitas', formatCurrency(0)],
+        ['Receita Prevista', formatCurrency(relatorio.totais.titulosTotalReceitaPrevista)],
+        ['Outras Receitas', formatCurrency(relatorio.totais.titulosTotalOutrasReceitas)],
       ],
       foot: [['Total', formatCurrency(relatorio.totais.titulosTotal)]],
       theme: 'grid',
@@ -667,8 +748,8 @@ const RelatorioCobrancaPage: React.FC = () => {
       startY: posY + 2,
       head: [['Item', 'Valor']],
       body: [
-        ['Receita Prevista', formatCurrency(relatorio.totais.depositosTotal)],
-        ['Outras Receitas', formatCurrency(0)],
+        ['Receita Prevista', formatCurrency(relatorio.totais.depositosTotalReceitaPrevista)],
+        ['Outras Receitas', formatCurrency(relatorio.totais.depositosTotalOutrasReceitas)],
       ],
       foot: [['Total', formatCurrency(relatorio.totais.depositosTotal)]],
       theme: 'grid',
@@ -1004,10 +1085,10 @@ const RelatorioCobrancaPage: React.FC = () => {
                       <tr className="hover:bg-blue-50">
                         <td className="px-4 py-3 font-semibold text-gray-800 border border-gray-300">Títulos</td>
                         <td className="px-4 py-3 text-right text-gray-900 border border-gray-300">
-                          {formatCurrency(relatorio.totais.titulosTotal)}
+                          {formatCurrency(relatorio.totais.titulosTotalReceitaPrevista)}
                         </td>
                         <td className="px-4 py-3 text-right text-gray-900 border border-gray-300">
-                          {formatCurrency(0)}
+                          {formatCurrency(relatorio.totais.titulosTotalOutrasReceitas)}
                         </td>
                         <td className="px-4 py-3 text-right font-bold text-gray-900 border border-gray-300">
                           {formatCurrency(relatorio.totais.titulosTotal)}
@@ -1016,10 +1097,10 @@ const RelatorioCobrancaPage: React.FC = () => {
                       <tr className="hover:bg-green-50">
                         <td className="px-4 py-3 font-semibold text-gray-800 border border-gray-300">Depósitos</td>
                         <td className="px-4 py-3 text-right text-gray-900 border border-gray-300">
-                          {formatCurrency(relatorio.totais.depositosTotal)}
+                          {formatCurrency(relatorio.totais.depositosTotalReceitaPrevista)}
                         </td>
                         <td className="px-4 py-3 text-right text-gray-900 border border-gray-300">
-                          {formatCurrency(0)}
+                          {formatCurrency(relatorio.totais.depositosTotalOutrasReceitas)}
                         </td>
                         <td className="px-4 py-3 text-right font-bold text-gray-900 border border-gray-300">
                           {formatCurrency(relatorio.totais.depositosTotal)}
@@ -1028,10 +1109,10 @@ const RelatorioCobrancaPage: React.FC = () => {
                       <tr className="bg-gray-50 font-bold">
                         <td className="px-4 py-3 text-gray-900 border border-gray-300">TOTAL GERAL</td>
                         <td className="px-4 py-3 text-right text-gray-900 border border-gray-300">
-                          {formatCurrency(relatorio.totais.titulosTotal + relatorio.totais.depositosTotal)}
+                          {formatCurrency(relatorio.totais.titulosTotalReceitaPrevista + relatorio.totais.depositosTotalReceitaPrevista)}
                         </td>
                         <td className="px-4 py-3 text-right text-gray-900 border border-gray-300">
-                          {formatCurrency(0)}
+                          {formatCurrency(relatorio.totais.titulosTotalOutrasReceitas + relatorio.totais.depositosTotalOutrasReceitas)}
                         </td>
                         <td className="px-4 py-3 text-right text-lg text-primary-700 border border-gray-300">
                           {formatCurrency(relatorio.totais.realizado)}

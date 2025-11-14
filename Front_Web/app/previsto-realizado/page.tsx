@@ -347,26 +347,40 @@ export default function PrevistoRealizadoPage() {
         });
 
         // Buscar saldos realizados - calculando diretamente das tabelas
-        // Buscar receitas de rec_receitas (com conta de receita)
-        const { data: receitasData, error: erroReceitas } = await supabase
+        // Buscar receitas de rec_receitas (com conta de receita e tipo)
+        const { data: receitasDataRaw, error: erroReceitas } = await supabase
           .from('rec_receitas')
-          .select('rec_data, rec_valor, rec_ctr_id')
+          .select('rec_data, rec_valor, rec_ctr_id, tpr_tipos_receita(tpr_nome)')
           .gte('rec_data', periodoInicio)
           .lte('rec_data', periodoFim);
 
         if (erroReceitas) throw erroReceitas;
 
+        // Filtrar apenas receitas previstas (tipos que incluem "RECEITA PREVISTA" ou "PREVISTA")
+        const receitasData = (receitasDataRaw || []).filter((rec: any) => {
+          const tipoReceita = Array.isArray(rec.tpr_tipos_receita) ? rec.tpr_tipos_receita[0] : rec.tpr_tipos_receita;
+          const tipoNome = tipoReceita?.tpr_nome ? String(tipoReceita.tpr_nome).toUpperCase() : '';
+          return tipoNome.includes('RECEITA PREVISTA') || tipoNome.includes('PREVISTA');
+        });
+
         // Armazenar receitas com informação da conta
         setReceitasRealizadas(receitasData || []);
 
         // Buscar cobranças (TAMBÉM SÃO RECEITAS - lançamento de cobrança)
-        const { data: cobrancasData, error: erroCobrancas } = await supabase
+        const { data: cobrancasDataRaw, error: erroCobrancas } = await supabase
           .from('cob_cobrancas')
-          .select('cob_data, cob_valor')
+          .select('cob_data, cob_valor, tpr_tipos_receita(tpr_nome)')
           .gte('cob_data', periodoInicio)
           .lte('cob_data', periodoFim);
 
         if (erroCobrancas) throw erroCobrancas;
+
+        // Filtrar apenas cobranças de receitas previstas (tipos que incluem "RECEITA PREVISTA" ou "PREVISTA")
+        const cobrancasData = (cobrancasDataRaw || []).filter((cob: any) => {
+          const tipoReceita = Array.isArray(cob.tpr_tipos_receita) ? cob.tpr_tipos_receita[0] : cob.tpr_tipos_receita;
+          const tipoNome = tipoReceita?.tpr_nome ? String(tipoReceita.tpr_nome).toUpperCase() : '';
+          return tipoNome.includes('RECEITA PREVISTA') || tipoNome.includes('PREVISTA');
+        });
 
         // Buscar DESPESAS de pag_pagamentos_area
         const { data: pagamentosData, error: erroPagamentos } = await supabase
