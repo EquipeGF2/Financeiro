@@ -660,11 +660,11 @@ const RelatorioCobrancaPage: React.FC = () => {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.setTextColor(55, 65, 81); // gray-700
-    doc.text('PREVISTO', margem + 2, posY + 4);
+    doc.text('PREVISTO', margem + cardWidth / 2, posY + 4, { align: 'center' });
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
     doc.setTextColor(30, 64, 175); // blue-800
-    doc.text(formatCurrency(relatorio.totais.previsto), margem + 2, posY + 10);
+    doc.text(formatCurrency(relatorio.totais.previsto), margem + cardWidth / 2, posY + 10, { align: 'center' });
 
     // Card 2: Realizado (apenas receita prevista)
     const card2X = margem + cardWidth + 3;
@@ -675,11 +675,11 @@ const RelatorioCobrancaPage: React.FC = () => {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.setTextColor(55, 65, 81);
-    doc.text('REALIZADO', card2X + 2, posY + 4);
+    doc.text('REALIZADO', card2X + cardWidth / 2, posY + 4, { align: 'center' });
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(11);
     doc.setTextColor(21, 128, 61); // green-700
-    doc.text(formatCurrency(totalReceitaPrevista), card2X + 2, posY + 10);
+    doc.text(formatCurrency(totalReceitaPrevista), card2X + cardWidth / 2, posY + 10, { align: 'center' });
 
     // Card 3: Cobertura
     const card3X = card2X + cardWidth + 3;
@@ -692,19 +692,19 @@ const RelatorioCobrancaPage: React.FC = () => {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7);
     doc.setTextColor(55, 65, 81);
-    doc.text('% COBERTURA', card3X + 2, posY + 4);
+    doc.text('% COBERTURA', card3X + cardWidth / 2, posY + 4, { align: 'center' });
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(14);
     doc.setTextColor(126, 34, 206); // purple-700
-    doc.text(`${cobertura}%`, card3X + 2, posY + 11);
+    doc.text(`${cobertura}%`, card3X + cardWidth / 2, posY + 11, { align: 'center' });
 
     // Linha divisória adicional nos cards
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(6);
     doc.setTextColor(107, 114, 128); // gray-500
-    doc.text('Títulos + Depósitos', margem + 2, posY + 15);
-    doc.text('Total do dia', card2X + 2, posY + 15);
-    doc.text('Meta alcançada', card3X + 2, posY + 15);
+    doc.text('Títulos + Depósitos', margem + cardWidth / 2, posY + 15, { align: 'center' });
+    doc.text('Total do dia', card2X + cardWidth / 2, posY + 15, { align: 'center' });
+    doc.text('Meta alcançada', card3X + cardWidth / 2, posY + 15, { align: 'center' });
 
     // Reset colors
     doc.setTextColor(0, 0, 0);
@@ -729,8 +729,8 @@ const RelatorioCobrancaPage: React.FC = () => {
       body: resumoBancoData,
       foot: [['TOTAL', formatCurrency(totalBancos)]],
       theme: 'grid',
-      styles: { fontSize: 8, halign: 'right', cellPadding: 1.5, lineWidth: 0.1, lineColor: [0, 0, 0] },
-      headStyles: { fillColor: [100, 116, 139], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+      styles: { fontSize: 8, halign: 'center', cellPadding: 1.5, lineWidth: 0.1, lineColor: [0, 0, 0] },
+      headStyles: { fillColor: [100, 116, 139], textColor: 255, fontStyle: 'bold', fontSize: 8, halign: 'center' },
       columnStyles: { 0: { halign: 'left' } },
       footStyles: { fontStyle: 'bold', fillColor: [226, 232, 240], textColor: [0, 0, 0] },
       margin: { left: margem, right: margem },
@@ -756,17 +756,17 @@ const RelatorioCobrancaPage: React.FC = () => {
 
     autoTable(doc, {
       startY: posY + 2,
-      head: [['Item', 'Valor']],
+      head: [['Tipo de Receita', 'Valor']],
       body: [
         ['Receita Prevista', formatCurrency(relatorio.totais.titulosTotalReceitaPrevista)],
         ['Outras Receitas', formatCurrency(relatorio.totais.titulosTotalOutrasReceitas)],
       ],
       foot: [['Total', formatCurrency(relatorio.totais.titulosTotal)]],
       theme: 'grid',
-      styles: { fontSize: 8, halign: 'right', cellPadding: 1.5, lineWidth: 0.1, lineColor: [0, 0, 0] },
-      headStyles: { fillColor: [31, 73, 125], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+      styles: { fontSize: 8, halign: 'center', cellPadding: 1.5, lineWidth: 0.1, lineColor: [0, 0, 0] },
+      headStyles: { fillColor: [31, 73, 125], textColor: 255, fontStyle: 'bold', fontSize: 8, halign: 'center' },
       columnStyles: { 0: { halign: 'left' } },
-      footStyles: { fontStyle: 'bold', fillColor: [240, 248, 255] },
+      footStyles: { fontStyle: 'bold', fillColor: [220, 235, 250], textColor: [0, 0, 0] },
       margin: { left: margem, right: larguraPagina / 2 + 2 },
       tableLineWidth: 0.1,
       tableLineColor: [0, 0, 0],
@@ -781,17 +781,17 @@ const RelatorioCobrancaPage: React.FC = () => {
 
     autoTable(doc, {
       startY: posY + 2,
-      head: [['Item', 'Valor']],
+      head: [['Tipo de Receita', 'Valor']],
       body: [
         ['Receita Prevista', formatCurrency(relatorio.totais.depositosTotalReceitaPrevista)],
         ['Outras Receitas', formatCurrency(relatorio.totais.depositosTotalOutrasReceitas)],
       ],
       foot: [['Total', formatCurrency(relatorio.totais.depositosTotal)]],
       theme: 'grid',
-      styles: { fontSize: 8, halign: 'right', cellPadding: 1.5, lineWidth: 0.1, lineColor: [0, 0, 0] },
-      headStyles: { fillColor: [34, 139, 34], textColor: 255, fontStyle: 'bold', fontSize: 8 },
+      styles: { fontSize: 8, halign: 'center', cellPadding: 1.5, lineWidth: 0.1, lineColor: [0, 0, 0] },
+      headStyles: { fillColor: [34, 139, 34], textColor: 255, fontStyle: 'bold', fontSize: 8, halign: 'center' },
       columnStyles: { 0: { halign: 'left' } },
-      footStyles: { fontStyle: 'bold', fillColor: [240, 255, 240] },
+      footStyles: { fontStyle: 'bold', fillColor: [220, 250, 220], textColor: [0, 0, 0] },
       margin: { left: larguraPagina / 2 + 2, right: margem },
       tableLineWidth: 0.1,
       tableLineColor: [0, 0, 0],
@@ -849,6 +849,20 @@ const RelatorioCobrancaPage: React.FC = () => {
       const totalGeralTitulos = bancosComTitulos.reduce((sum, b) => sum + b.titulos.total, 0);
       footerTitulos.push(formatCurrency(totalGeralTitulos));
 
+      // Calcular largura das colunas de valores
+      const numBancos = bancosComTitulos.length;
+      const larguraTipoReceita = 65;
+      const larguraRestante = larguraUtil - larguraTipoReceita;
+      const larguraColValor = larguraRestante / (numBancos + 1); // +1 para coluna Total
+
+      const columnStylesTitulos: any = {
+        0: { halign: 'left', cellWidth: larguraTipoReceita }
+      };
+      // Definir largura para cada coluna de banco e total
+      for (let i = 1; i <= numBancos + 1; i++) {
+        columnStylesTitulos[i] = { cellWidth: larguraColValor };
+      }
+
       autoTable(doc, {
         startY: posY,
         head: [headersTitulos],
@@ -857,7 +871,7 @@ const RelatorioCobrancaPage: React.FC = () => {
         theme: 'grid',
         styles: { fontSize: 7, halign: 'center', cellPadding: 1.5, lineWidth: 0.1, lineColor: [0, 0, 0] },
         headStyles: { fillColor: [31, 73, 125], textColor: 255, fontStyle: 'bold', fontSize: 8, halign: 'center' },
-        columnStyles: { 0: { halign: 'left', cellWidth: 50 } },
+        columnStyles: columnStylesTitulos,
         footStyles: { fontStyle: 'bold', fontSize: 8, fillColor: [220, 235, 250], textColor: [0, 0, 0] },
         margin: { left: margem, right: margem },
         tableLineWidth: 0.1,
@@ -905,6 +919,20 @@ const RelatorioCobrancaPage: React.FC = () => {
       const totalGeralDepositos = bancosComDepositos.reduce((sum, b) => sum + b.depositos.total, 0);
       footerDepositos.push(formatCurrency(totalGeralDepositos));
 
+      // Calcular largura das colunas de valores
+      const numBancosDepositos = bancosComDepositos.length;
+      const larguraTipoReceitaDepositos = 65;
+      const larguraRestanteDepositos = larguraUtil - larguraTipoReceitaDepositos;
+      const larguraColValorDepositos = larguraRestanteDepositos / (numBancosDepositos + 1); // +1 para coluna Total
+
+      const columnStylesDepositos: any = {
+        0: { halign: 'left', cellWidth: larguraTipoReceitaDepositos }
+      };
+      // Definir largura para cada coluna de banco e total
+      for (let i = 1; i <= numBancosDepositos + 1; i++) {
+        columnStylesDepositos[i] = { cellWidth: larguraColValorDepositos };
+      }
+
       autoTable(doc, {
         startY: posY,
         head: [headersDepositos],
@@ -913,7 +941,7 @@ const RelatorioCobrancaPage: React.FC = () => {
         theme: 'grid',
         styles: { fontSize: 7, halign: 'center', cellPadding: 1.5, lineWidth: 0.1, lineColor: [0, 0, 0] },
         headStyles: { fillColor: [34, 139, 34], textColor: 255, fontStyle: 'bold', fontSize: 8, halign: 'center' },
-        columnStyles: { 0: { halign: 'left', cellWidth: 50 } },
+        columnStyles: columnStylesDepositos,
         footStyles: { fontStyle: 'bold', fontSize: 8, fillColor: [220, 250, 220], textColor: [0, 0, 0] },
         margin: { left: margem, right: margem },
         tableLineWidth: 0.1,
