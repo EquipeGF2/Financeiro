@@ -785,11 +785,17 @@ const RelatorioCobrancaPage: React.FC = () => {
         const colX = margem + (colWidth + 2) * col;
         const startYPos = posY + (row * (cardHeightUniforme + 3));
 
+        // Combinar tipos de receita prevista e outras receitas
+        const todosTiposTitulos = [
+          ...banco.titulos.tiposReceitaPrevista,
+          ...banco.titulos.tiposOutrasReceitas
+        ];
+
         // Usar autoTable mas com altura mínima definida
         autoTable(doc, {
           startY: startYPos,
           head: [[banco.nome, '']],
-          body: banco.titulos.tipos.map(tipo => [tipo.tipoNome, formatCurrency(tipo.valor)]),
+          body: todosTiposTitulos.map(tipo => [tipo.tipoNome, formatCurrency(tipo.valor)]),
           foot: [['Total', formatCurrency(banco.titulos.total)]],
           theme: 'grid',
           styles: { fontSize: 7, halign: 'right', cellPadding: 1.5, lineWidth: 0.5, lineColor: [0, 0, 0] },
@@ -829,10 +835,16 @@ const RelatorioCobrancaPage: React.FC = () => {
         const colX = margem + (colWidth + 2) * col;
         const startYPos = posY + (row * (cardHeightUniforme + 3));
 
+        // Combinar tipos de receita prevista e outras receitas
+        const todosTiposDepositos = [
+          ...banco.depositos.tiposReceitaPrevista,
+          ...banco.depositos.tiposOutrasReceitas
+        ];
+
         autoTable(doc, {
           startY: startYPos,
           head: [[banco.nome, '']],
-          body: banco.depositos.tipos.map(tipo => [tipo.tipoNome, formatCurrency(tipo.valor)]),
+          body: todosTiposDepositos.map(tipo => [tipo.tipoNome, formatCurrency(tipo.valor)]),
           foot: [['Total', formatCurrency(banco.depositos.total)]],
           theme: 'grid',
           styles: { fontSize: 7, halign: 'right', cellPadding: 1.5, lineWidth: 0.5, lineColor: [0, 0, 0] },
@@ -1162,7 +1174,7 @@ const RelatorioCobrancaPage: React.FC = () => {
                     .map((banco) => (
                       <Card key={`titulos-${banco.id}`} title={banco.nome}>
                         <div className="space-y-2">
-                          {banco.titulos.tipos.map((tipo) => (
+                          {[...banco.titulos.tiposReceitaPrevista, ...banco.titulos.tiposOutrasReceitas].map((tipo) => (
                             <div key={`titulo-${banco.id}-${tipo.tipoId}`} className="flex justify-between items-center">
                               <span className="text-sm text-gray-600">{tipo.tipoNome}</span>
                               <span className="text-sm font-semibold text-gray-900">
@@ -1195,7 +1207,7 @@ const RelatorioCobrancaPage: React.FC = () => {
                     .map((banco) => (
                       <Card key={`depositos-${banco.id}`} title={banco.nome}>
                         <div className="space-y-2">
-                          {banco.depositos.tipos.map((tipo) => (
+                          {[...banco.depositos.tiposReceitaPrevista, ...banco.depositos.tiposOutrasReceitas].map((tipo) => (
                             <div key={`deposito-${banco.id}-${tipo.tipoId}`} className="flex justify-between items-center">
                               <span className="text-sm text-gray-600">{tipo.tipoNome}</span>
                               <span className="text-sm font-semibold text-gray-900">
