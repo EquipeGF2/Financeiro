@@ -104,6 +104,7 @@ type RelatorioSaldoDiario = {
     saldoFinalRealizado: number;
     bancosPrevistos: number;
     bancosRealizados: number;
+    aplicacoesRealizadas: number;
   };
 };
 
@@ -422,13 +423,24 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
           }
         });
 
+        // Calcular aplicações realizadas separadamente
+        let aplicacoesRealizadas = 0;
+
         normalizeRelation(pagamentosArea).forEach((item) => {
           const areaId = toString(item.pag_are_id, 'sem-area');
           const areaRel = normalizeRelation(item.are_areas)[0];
           const titulo = areaRel?.are_nome ? toString(areaRel.are_nome) : 'Área não informada';
           const chave = `${areaId}-${titulo.toLowerCase()}`;
+          const valor = arredondar(toNumber(item.pag_valor));
+
+          // Verificar se é área de aplicação
+          const tituloNormalizado = titulo.trim().toUpperCase();
+          if (tituloNormalizado.includes('APLICACAO') || tituloNormalizado.includes('APLICAÇÃO')) {
+            aplicacoesRealizadas += valor;
+          }
+
           const existente = mapaGastos.get(chave) ?? { titulo, previsto: 0, realizado: 0 };
-          existente.realizado += arredondar(toNumber(item.pag_valor));
+          existente.realizado += valor;
           mapaGastos.set(chave, existente);
         });
 
@@ -512,6 +524,7 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
             saldoFinalRealizado,
             bancosPrevistos: totalBancosPrevistos,
             bancosRealizados: totalBancosRealizados,
+            aplicacoesRealizadas: arredondar(aplicacoesRealizadas),
           },
         });
         setErro(null);
@@ -720,6 +733,11 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
         chave: 'resultado',
         titulo: 'Resultado do Dia (Receitas - Despesas)',
         realizado: resumo.resultadoRealizado,
+      },
+      {
+        chave: 'aplicacoes',
+        titulo: 'Aplicações/Resgates',
+        realizado: resumo.aplicacoesRealizadas,
       },
       {
         chave: 'saldo-final',
