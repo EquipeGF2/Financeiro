@@ -345,7 +345,27 @@ const RelatorioPrevisaoSemanalPage: React.FC = () => {
           }
         }
 
-        const saldoDiario = construirLinha(saldoDiarioItens, datasOrdenadas, 'Saldo diário previsto');
+        let saldoDiario = construirLinha(saldoDiarioItens, datasOrdenadas, 'Saldo diário previsto');
+
+        // Se não houver saldo diário importado, calcular automaticamente (receitas - despesas por dia)
+        if (!saldoDiario || Object.keys(saldoDiario.valores).length === 0) {
+          const valores: Record<string, number> = {};
+          let totalSaldoDiario = 0;
+
+          datasOrdenadas.forEach((data) => {
+            const receitasDia = receitas.reduce((sum, row) => sum + (row.valores[data] ?? 0), 0);
+            const despesasDia = despesas.reduce((sum, row) => sum + (row.valores[data] ?? 0), 0);
+            const saldoDia = Math.round((receitasDia - despesasDia) * 100) / 100;
+            valores[data] = saldoDia;
+            totalSaldoDiario += saldoDia;
+          });
+
+          saldoDiario = {
+            categoria: 'Saldo diário previsto',
+            valores,
+            total: Math.round(totalSaldoDiario * 100) / 100,
+          };
+        }
 
         // Calcula saldo acumulado corretamente:
         // Primeiro dia: saldo inicial + saldo diário calculado
