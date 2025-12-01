@@ -491,10 +491,18 @@ const SaldoDiarioPage: React.FC = () => {
     async (data: string) => {
       const supabase = getSupabaseClient();
 
-      // Calcular dia anterior
-      const dataObj = new Date(data + 'T00:00:00');
-      dataObj.setDate(dataObj.getDate() - 1);
-      const dataAnterior = dataObj.toISOString().split('T')[0];
+      // Buscar o último dia COM saldo registrado (não apenas o dia anterior)
+      const { data: ultimoSaldo, error: ultimoSaldoError } = await supabase
+        .from('sdb_saldo_banco')
+        .select('sdb_data')
+        .lt('sdb_data', data) // Menor que a data atual
+        .order('sdb_data', { ascending: false })
+        .limit(1);
+
+      let dataAnterior = null;
+      if (ultimoSaldo && ultimoSaldo.length > 0) {
+        dataAnterior = ultimoSaldo[0].sdb_data;
+      }
 
       const [pagAreaRes, recRes, pagBancoRes, saldoRes, saldoDiaAnteriorRes] = await Promise.all([
         supabase
@@ -521,12 +529,15 @@ const SaldoDiarioPage: React.FC = () => {
           .eq('sdb_data', data)
           .order('sdb_criado_em', { ascending: false })
           .limit(100),
-        supabase
-          .from('sdb_saldo_banco')
-          .select('sdb_id, sdb_saldo, sdb_data, sdb_ban_id, ban_bancos(ban_nome)')
-          .eq('sdb_data', dataAnterior)
-          .order('sdb_criado_em', { ascending: false })
-          .limit(100),
+        // Buscar saldo do último dia com lançamento (se existir)
+        dataAnterior
+          ? supabase
+              .from('sdb_saldo_banco')
+              .select('sdb_id, sdb_saldo, sdb_data, sdb_ban_id, ban_bancos(ban_nome)')
+              .eq('sdb_data', dataAnterior)
+              .order('sdb_criado_em', { ascending: false })
+              .limit(100)
+          : Promise.resolve({ data: [], error: null }),
       ]);
 
       if (pagAreaRes.error) throw pagAreaRes.error;
@@ -1905,8 +1916,8 @@ const SaldoDiarioPage: React.FC = () => {
           </div>
           <div className="rounded-lg border border-gray-200 bg-white/80 p-3 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Pagamentos</p>
-            <p className="mt-2 text-xl font-semibold text-gray-900">{formatCurrency(totalPagamentosArea + totalPagamentosBanco)}</p>
-            <p className="mt-1 text-xs text-gray-400">Saídas do dia</p>
+            <p className="mt-2 text-xl font-semibold text-gray-900">{formatCurrency(totalPagamentosArea)}</p>
+            <p className="mt-1 text-xs text-gray-400">Pagamentos por área (ignora pagamentos por banco)</p>
           </div>
           <div className="rounded-lg border border-gray-200 bg-white/80 p-3 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Saldo Final</p>
