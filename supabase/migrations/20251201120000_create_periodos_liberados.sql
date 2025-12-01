@@ -76,6 +76,10 @@ CREATE POLICY "per_usuarios_excluem_seus_dados"
 GRANT ALL ON financas.per_periodos_liberados TO authenticated;
 GRANT ALL ON financas.per_periodos_liberados TO anon;
 
+-- Grant permissions on sequence
+GRANT USAGE, SELECT ON SEQUENCE financas.per_periodos_liberados_per_id_seq TO authenticated;
+GRANT USAGE, SELECT ON SEQUENCE financas.per_periodos_liberados_per_id_seq TO anon;
+
 -- Comment
 COMMENT ON TABLE financas.per_periodos_liberados IS 'Controla períodos liberados para digitação no saldo diário, permitindo edição de datas fechadas';
 COMMENT ON COLUMN financas.per_periodos_liberados.per_data_inicio IS 'Data inicial do período liberado';
