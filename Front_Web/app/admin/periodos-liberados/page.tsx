@@ -19,6 +19,9 @@ interface PeriodoLiberado {
   per_data_fim: string;
   per_motivo: string | null;
   per_ativo: boolean;
+  per_saldo_diario: boolean;
+  per_previsao_semanal: boolean;
+  per_cobranca: boolean;
   per_criado_em: string;
 }
 
@@ -31,6 +34,9 @@ export default function PeriodosLiberadosPage() {
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
   const [motivo, setMotivo] = useState('');
+  const [saldoDiario, setSaldoDiario] = useState(true);
+  const [previsaoSemanal, setPrevisaoSemanal] = useState(false);
+  const [cobranca, setCobranca] = useState(false);
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
@@ -93,6 +99,9 @@ export default function PeriodosLiberadosPage() {
           per_data_fim: dataFim,
           per_motivo: motivo || null,
           per_ativo: true,
+          per_saldo_diario: saldoDiario,
+          per_previsao_semanal: previsaoSemanal,
+          per_cobranca: cobranca,
           per_usr_id: usuario.usr_id, // Usar o usr_id da tabela
         });
 
@@ -103,6 +112,9 @@ export default function PeriodosLiberadosPage() {
       setDataInicio('');
       setDataFim('');
       setMotivo('');
+      setSaldoDiario(true);
+      setPrevisaoSemanal(false);
+      setCobranca(false);
       await carregarPeriodos();
     } catch (error) {
       console.error('Erro ao liberar período:', error);
@@ -162,7 +174,7 @@ export default function PeriodosLiberadosPage() {
               Liberação de Períodos
             </h1>
             <p className="text-gray-600 mt-2">
-              Libere períodos fechados para permitir digitação no saldo diário
+              Libere períodos fechados para permitir lançamentos em Saldo Diário, Previsão Semanal e Cobranças
             </p>
           </div>
           <Button onClick={() => setModalOpen(true)}>
@@ -207,6 +219,24 @@ export default function PeriodosLiberadosPage() {
                         <span className="font-medium">Motivo:</span> {periodo.per_motivo}
                       </p>
                     )}
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <span className="text-gray-600 text-sm font-medium">Módulos:</span>
+                      {periodo.per_saldo_diario && (
+                        <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
+                          Saldo Diário
+                        </span>
+                      )}
+                      {periodo.per_previsao_semanal && (
+                        <span className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full">
+                          Previsão Semanal
+                        </span>
+                      )}
+                      {periodo.per_cobranca && (
+                        <span className="px-2 py-1 bg-orange-100 text-orange-700 text-xs rounded-full">
+                          Cobranças
+                        </span>
+                      )}
+                    </div>
                     <p className="text-gray-500 text-sm mt-1">
                       Criado em: {new Date(periodo.per_criado_em).toLocaleString('pt-BR')}
                     </p>
@@ -283,6 +313,41 @@ export default function PeriodosLiberadosPage() {
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
                     />
                   </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Liberar para os módulos:
+                    </label>
+                    <div className="space-y-2">
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={saldoDiario}
+                          onChange={(e) => setSaldoDiario(e.target.checked)}
+                          className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
+                        />
+                        <span className="ml-2 text-gray-700">Saldo Diário</span>
+                      </label>
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={previsaoSemanal}
+                          onChange={(e) => setPrevisaoSemanal(e.target.checked)}
+                          className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
+                        />
+                        <span className="ml-2 text-gray-700">Previsão Semanal</span>
+                      </label>
+                      <label className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={cobranca}
+                          onChange={(e) => setCobranca(e.target.checked)}
+                          className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
+                        />
+                        <span className="ml-2 text-gray-700">Cobranças</span>
+                      </label>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex gap-3 mt-6">
@@ -293,6 +358,9 @@ export default function PeriodosLiberadosPage() {
                       setDataInicio('');
                       setDataFim('');
                       setMotivo('');
+                      setSaldoDiario(true);
+                      setPrevisaoSemanal(false);
+                      setCobranca(false);
                     }}
                     className="flex-1 bg-gray-500 hover:bg-gray-600"
                   >

@@ -12,6 +12,7 @@ import {
 } from '@/lib/supabaseClient';
 import { getUserSession } from '@/lib/userSession';
 import { traduzirErroSupabase } from '@/lib/supabaseErrors';
+import { dataLiberadaParaEdicao } from '@/lib/verificarPeriodoLiberado';
 
 type Mensagem = { tipo: 'sucesso' | 'erro' | 'info'; texto: string };
 
@@ -198,6 +199,7 @@ const arredondar = (valor: number): number => Math.round(valor * 100) / 100;
 export default function LancamentoCobrancaPage() {
   const [hojeIso] = useState(() => toISODate(new Date()));
   const limiteRetroativo = useMemo(() => calcularRetroativo(7), []);
+  const [periodoLiberado, setPeriodoLiberado] = useState(true); // Assume liberado inicialmente
 
   const [usuario, setUsuario] = useState<UsuarioRow | null>(null);
   const [carregando, setCarregando] = useState(true);
@@ -218,7 +220,7 @@ export default function LancamentoCobrancaPage() {
   const [itensMarcadosExclusao, setItensMarcadosExclusao] = useState<Set<string>>(new Set());
   const [mostrarModalExclusao, setMostrarModalExclusao] = useState(false);
 
-  const podeEditar = dataReferencia >= limiteRetroativo && dataReferencia <= hojeIso;
+  const podeEditar = (dataReferencia >= limiteRetroativo && dataReferencia <= hojeIso) || periodoLiberado;
 
   const contasMap = useMemo(() => {
     const mapa = new Map<number, ContaOption>();
@@ -778,6 +780,25 @@ export default function LancamentoCobrancaPage() {
     };
 
     buscarPrevisaoDia();
+  }, [dataReferencia]);
+
+  // Verificar se o período está liberado manualmente
+  useEffect(() => {
+    const verificarPeriodo = async () => {
+      if (!dataReferencia) return;
+
+      try {
+        const supabase = getSupabaseClient();
+        const { liberada } = await dataLiberadaParaEdicao(supabase, dataReferencia, 'cobranca');
+        setPeriodoLiberado(liberada);
+      } catch (error) {
+        console.error('Erro ao verificar período liberado:', error);
+        // Em caso de erro, mantém o comportamento padrão (últimos 7 dias)
+        setPeriodoLiberado(false);
+      }
+    };
+
+    verificarPeriodo();
   }, [dataReferencia]);
 
   const handleValorBancoChange = (

@@ -99,7 +99,7 @@ const AuditoriaSaldosDiariosPage: React.FC = () => {
             .order('sdd_data', { ascending: true }),
           supabase
             .from('rec_receitas')
-            .select('rec_data, rec_valor, rec_ctr_id, ctr_contas_receita(ctr_nome, ctr_tipo)')
+            .select('rec_data, rec_valor, rec_ctr_id, ctr_contas_receita(ctr_nome)')
             .gte('rec_data', inicio)
             .lte('rec_data', fim),
           supabase
@@ -160,19 +160,14 @@ const AuditoriaSaldosDiariosPage: React.FC = () => {
           const data = item.rec_data;
           const valor = Number(item.rec_valor ?? 0);
           const contaNome = item.ctr_contas_receita?.ctr_nome || '';
-          const contaTipo = item.ctr_contas_receita?.ctr_tipo || '';
           const contaNomeNorm = contaNome.toUpperCase().trim();
 
           const ehAplicacao = contaNomeNorm.includes('APLICACAO') || contaNomeNorm.includes('APLICAÇÃO');
 
           if (ehAplicacao) {
-            // Aplicações: Realizado/Previsto Pago = transferência para aplicação (negativo)
-            // Previsto A Receber = resgate (positivo)
-            if (contaTipo === 'Realizado' || contaTipo === 'Previsto Pago') {
-              mapaAplicacoesPorData.set(data, (mapaAplicacoesPorData.get(data) ?? 0) - valor);
-            } else {
-              mapaAplicacoesPorData.set(data, (mapaAplicacoesPorData.get(data) ?? 0) + valor);
-            }
+            // Aplicações: valores podem ser positivos (resgate) ou negativos (aplicação)
+            // Como não temos o tipo, consideramos o valor como está
+            mapaAplicacoesPorData.set(data, (mapaAplicacoesPorData.get(data) ?? 0) + valor);
           } else {
             mapaReceitasPorData.set(data, (mapaReceitasPorData.get(data) ?? 0) + valor);
           }
