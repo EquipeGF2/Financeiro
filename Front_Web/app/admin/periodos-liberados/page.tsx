@@ -162,7 +162,7 @@ export default function PeriodosLiberadosPage() {
         <Card>
           {periodos.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
-              Nenhum período liberado. Clique em "Liberar Período" para começar.
+              Nenhum período liberado. Clique em &quot;Liberar Período&quot; para começar.
             </div>
           ) : (
             <div className="space-y-4">
