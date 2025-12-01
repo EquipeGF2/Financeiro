@@ -104,8 +104,8 @@ export function dataEstaNosUltimosDiasUteis(
  * Verifica se uma data está liberada para edição
  *
  * Regras:
- * 1. Se está nos últimos 4 dias úteis E não tem lançamentos: LIBERADO
- * 2. Se foi liberada manualmente (per_periodos_liberados): LIBERADO
+ * 1. Se foi liberada manualmente (per_periodos_liberados): LIBERADO
+ * 2. Se está nos últimos 4 dias úteis: SEMPRE LIBERADO (independente de ter lançamentos)
  * 3. Caso contrário: BLOQUEADO
  */
 export async function dataLiberadaParaEdicao(
@@ -116,7 +116,7 @@ export async function dataLiberadaParaEdicao(
   motivo: string;
 }> {
   try {
-    // 1. Verifica se foi liberada manualmente
+    // 1. Verifica se foi liberada manualmente (prioridade máxima)
     const liberadaManual = await dataLiberadaManualmente(supabase, data);
     if (liberadaManual) {
       return {
@@ -129,23 +129,15 @@ export async function dataLiberadaParaEdicao(
     const nosUltimosDias = dataEstaNosUltimosDiasUteis(data, 4);
 
     if (nosUltimosDias) {
-      // 3. Se está nos últimos dias, verifica se há lançamentos
-      const temLancamentos = await temLancamentosNaData(supabase, data);
-
-      if (!temLancamentos) {
-        return {
-          liberada: true,
-          motivo: 'Data está nos últimos 4 dias úteis sem lançamentos',
-        };
-      } else {
-        return {
-          liberada: false,
-          motivo: 'Data possui lançamentos. Solicite liberação ao administrador.',
-        };
-      }
+      // Se está nos últimos 4 dias úteis, SEMPRE permite edição
+      // (mesmo que já tenha lançamentos - permite adicionar mais lançamentos)
+      return {
+        liberada: true,
+        motivo: 'Data está nos últimos 4 dias úteis',
+      };
     }
 
-    // 4. Data fora do período permitido
+    // 3. Data fora do período permitido
     return {
       liberada: false,
       motivo: 'Data fora do período permitido. Solicite liberação ao administrador.',
