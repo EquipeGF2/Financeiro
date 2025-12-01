@@ -2,7 +2,7 @@
  * Utilitário para verificar se uma data está liberada para edição
  */
 
-import { SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   getUltimosDiasUteis,
   formatDateToISO,
@@ -13,7 +13,7 @@ import {
  * Verifica se há lançamentos na data especificada
  */
 export async function temLancamentosNaData(
-  supabase: SupabaseClient,
+  supabase: SupabaseClient<any, any, any>,
   data: string
 ): Promise<boolean> {
   try {
@@ -64,7 +64,7 @@ export async function temLancamentosNaData(
  * Verifica se a data está liberada manualmente na tabela de períodos
  */
 export async function dataLiberadaManualmente(
-  supabase: SupabaseClient,
+  supabase: SupabaseClient<any, any, any>,
   data: string
 ): Promise<boolean> {
   try {
@@ -109,7 +109,7 @@ export function dataEstaNosUltimosDiasUteis(
  * 3. Caso contrário: BLOQUEADO
  */
 export async function dataLiberadaParaEdicao(
-  supabase: SupabaseClient,
+  supabase: SupabaseClient<any, any, any>,
   data: string
 ): Promise<{
   liberada: boolean;
@@ -164,7 +164,7 @@ export async function dataLiberadaParaEdicao(
  * Retorna os últimos 4 dias úteis que não têm lançamentos
  */
 export async function obterDatasLiberadas(
-  supabase: SupabaseClient
+  supabase: SupabaseClient<any, any, any>
 ): Promise<string[]> {
   const ultimosDias = getUltimosDiasUteis(4);
   const datasLiberadas: string[] = [];
