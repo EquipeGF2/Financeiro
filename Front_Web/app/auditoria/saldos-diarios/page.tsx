@@ -16,6 +16,7 @@ interface SaldoBancoRow {
 
 interface SaldoDiarioRow {
   sdd_data: string;
+  sdd_saldo_inicial: number;
   sdd_saldo_final: number;
 }
 
@@ -77,8 +78,13 @@ const AuditoriaSaldosDiariosPage: React.FC = () => {
         setErro(null);
         const supabase = getSupabaseClient();
 
+        // Buscar saldo diário de um dia antes para usar como saldo inicial
+        const dataObj = new Date(inicio + 'T00:00:00');
+        dataObj.setDate(dataObj.getDate() - 1);
+        const diaAnterior = dataObj.toISOString().split('T')[0];
+
         // Buscar todos os dados necessários
-        const [saldosBancosRes, saldosDiariosRes] = await Promise.all([
+        const [saldosBancosRes, saldosDiariosRes, receitasRes, pagamentosAreaRes, pagamentosBancoRes] = await Promise.all([
           supabase
             .from('sdb_saldo_banco')
             .select('sdb_data, sdb_saldo, sdb_ban_id, ban_bancos(ban_nome)')
@@ -87,17 +93,38 @@ const AuditoriaSaldosDiariosPage: React.FC = () => {
             .order('sdb_data', { ascending: true }),
           supabase
             .from('sdd_saldo_diario')
-            .select('sdd_data, sdd_saldo_final')
-            .gte('sdd_data', inicio)
+            .select('sdd_data, sdd_saldo_inicial, sdd_saldo_final')
+            .gte('sdd_data', diaAnterior)
             .lte('sdd_data', fim)
             .order('sdd_data', { ascending: true }),
+          supabase
+            .from('rec_receitas')
+            .select('rec_data, rec_valor, rec_ctr_id, ctr_contas_receita(ctr_nome, ctr_tipo)')
+            .gte('rec_data', inicio)
+            .lte('rec_data', fim),
+          supabase
+            .from('pag_pagamentos_area')
+            .select('pag_data, pag_valor')
+            .gte('pag_data', inicio)
+            .lte('pag_data', fim),
+          supabase
+            .from('pbk_pagamentos_banco')
+            .select('pbk_data, pbk_valor')
+            .gte('pbk_data', inicio)
+            .lte('pbk_data', fim),
         ]);
 
         if (saldosBancosRes.error) throw saldosBancosRes.error;
         if (saldosDiariosRes.error) throw saldosDiariosRes.error;
+        if (receitasRes.error) throw receitasRes.error;
+        if (pagamentosAreaRes.error) throw pagamentosAreaRes.error;
+        if (pagamentosBancoRes.error) throw pagamentosBancoRes.error;
 
         const saldosBancos = (saldosBancosRes.data as SaldoBancoRow[]) ?? [];
-        const saldosDiarios = (saldosDiariosRes.data as SaldoDiarioRow[]) ?? [];
+        const saldosDiarios = saldosDiariosRes.data ?? [];
+        const receitas = receitasRes.data ?? [];
+        const pagamentosArea = pagamentosAreaRes.data ?? [];
+        const pagamentosBanco = pagamentosBancoRes.data ?? [];
 
         // Identificar bancos únicos
         const bancosUnicos = Array.from(
@@ -117,18 +144,77 @@ const AuditoriaSaldosDiariosPage: React.FC = () => {
           mapaBancos.set(nomeBanco, Number(item.sdb_saldo ?? 0));
         });
 
-        const mapaSaldosDiarios = new Map<string, number>();
-        saldosDiarios.forEach((item) => {
-          mapaSaldosDiarios.set(item.sdd_data, Number(item.sdd_saldo_final ?? 0));
+        // Criar mapas de saldo inicial e final registrados
+        const mapaSaldosIniciais = new Map<string, number>();
+        const mapaSaldosFinais = new Map<string, number>();
+        saldosDiarios.forEach((item: any) => {
+          mapaSaldosIniciais.set(item.sdd_data, Number(item.sdd_saldo_inicial ?? 0));
+          mapaSaldosFinais.set(item.sdd_data, Number(item.sdd_saldo_final ?? 0));
+        });
+
+        // Criar mapas de movimentação por data
+        const mapaReceitasPorData = new Map<string, number>();
+        const mapaAplicacoesPorData = new Map<string, number>();
+
+        receitas.forEach((item: any) => {
+          const data = item.rec_data;
+          const valor = Number(item.rec_valor ?? 0);
+          const contaNome = item.ctr_contas_receita?.ctr_nome || '';
+          const contaTipo = item.ctr_contas_receita?.ctr_tipo || '';
+          const contaNomeNorm = contaNome.toUpperCase().trim();
+
+          const ehAplicacao = contaNomeNorm.includes('APLICACAO') || contaNomeNorm.includes('APLICAÇÃO');
+
+          if (ehAplicacao) {
+            // Aplicações: Realizado/Previsto Pago = transferência para aplicação (negativo)
+            // Previsto A Receber = resgate (positivo)
+            if (contaTipo === 'Realizado' || contaTipo === 'Previsto Pago') {
+              mapaAplicacoesPorData.set(data, (mapaAplicacoesPorData.get(data) ?? 0) - valor);
+            } else {
+              mapaAplicacoesPorData.set(data, (mapaAplicacoesPorData.get(data) ?? 0) + valor);
+            }
+          } else {
+            mapaReceitasPorData.set(data, (mapaReceitasPorData.get(data) ?? 0) + valor);
+          }
+        });
+
+        const mapaPagamentosAreaPorData = new Map<string, number>();
+        pagamentosArea.forEach((item: any) => {
+          const data = item.pag_data;
+          const valor = Number(item.pag_valor ?? 0);
+          mapaPagamentosAreaPorData.set(data, (mapaPagamentosAreaPorData.get(data) ?? 0) + valor);
+        });
+
+        const mapaPagamentosBancoPorData = new Map<string, number>();
+        pagamentosBanco.forEach((item: any) => {
+          const data = item.pbk_data;
+          const valor = Number(item.pbk_valor ?? 0);
+          mapaPagamentosBancoPorData.set(data, (mapaPagamentosBancoPorData.get(data) ?? 0) + valor);
         });
 
         // Gerar linhas de auditoria
         const datas = gerarIntervaloDatas(inicio, fim);
         const linhasCalculadas: AuditoriaLinha[] = [];
+        let saldoFinalAnterior = mapaSaldosFinais.get(diaAnterior) ?? 0;
 
         datas.forEach((data) => {
           const saldosBancosDia = mapaSaldosBancosPorData.get(data);
-          const saldoFinalDia = mapaSaldosDiarios.get(data) ?? 0;
+
+          // Calcular saldo final do dia
+          let saldoFinalDia = mapaSaldosFinais.get(data);
+
+          // Se não houver saldo final registrado, calcular
+          if (!saldoFinalDia || saldoFinalDia === 0) {
+            const saldoInicial = mapaSaldosIniciais.get(data) ?? saldoFinalAnterior;
+            const receitas = mapaReceitasPorData.get(data) ?? 0;
+            const pagArea = mapaPagamentosAreaPorData.get(data) ?? 0;
+            const pagBanco = mapaPagamentosBancoPorData.get(data) ?? 0;
+            const aplicacoes = mapaAplicacoesPorData.get(data) ?? 0;
+
+            saldoFinalDia = saldoInicial + receitas - pagArea - pagBanco + aplicacoes;
+          }
+
+          saldoFinalAnterior = saldoFinalDia;
 
           const saldosPorBanco: Record<string, number> = {};
           let totalSaldosBancos = 0;
