@@ -75,6 +75,17 @@ export default function PeriodosLiberadosPage() {
       const supabase = getSupabaseClient();
       const { userId } = getUserSession();
 
+      // Buscar o usr_id correto da tabela usr_usuarios
+      const { data: usuario, error: userError } = await supabase
+        .from('usr_usuarios')
+        .select('usr_id')
+        .eq('usr_identificador', userId)
+        .single();
+
+      if (userError || !usuario) {
+        throw new Error('Usuário não encontrado');
+      }
+
       const { error } = await supabase
         .from('per_periodos_liberados')
         .insert({
@@ -82,7 +93,7 @@ export default function PeriodosLiberadosPage() {
           per_data_fim: dataFim,
           per_motivo: motivo || null,
           per_ativo: true,
-          per_usr_id: userId,
+          per_usr_id: usuario.usr_id, // Usar o usr_id da tabela
         });
 
       if (error) throw error;
