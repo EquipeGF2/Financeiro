@@ -785,7 +785,10 @@ export default function LancamentoCobrancaPage() {
   // Verificar se o período está liberado manualmente
   useEffect(() => {
     const verificarPeriodo = async () => {
-      if (!dataReferencia) return;
+      // Só verifica se a data estiver completa (formato YYYY-MM-DD = 10 caracteres)
+      if (!dataReferencia || dataReferencia.length !== 10) {
+        return;
+      }
 
       try {
         const supabase = getSupabaseClient();
@@ -1138,9 +1141,14 @@ export default function LancamentoCobrancaPage() {
                   min={limiteRetroativo}
                   max={hojeIso}
                   value={dataReferencia}
+                  onKeyDown={(e) => {
+                    // Previne digitação manual - só permite seleção via date picker
+                    e.preventDefault();
+                  }}
                   onChange={(event) => {
                     const value = event.target.value;
-                    if (!value) return;
+                    // Só atualiza se a data estiver completa (formato YYYY-MM-DD = 10 caracteres)
+                    if (!value || value.length !== 10) return;
                     setDataReferencia(value);
                     setMensagem(null);
                   }}
