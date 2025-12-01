@@ -10,30 +10,28 @@ import { getSupabaseClient } from '@/lib/supabaseClient';
 interface SaldoBancoRow {
   sdb_data: string;
   sdb_saldo: number;
-  sdb_ban_id: number | null;
-  ban_bancos: { ban_nome?: string | null } | { ban_nome?: string | null }[] | null;
+  sdb_ban_id: number;
+  ban_bancos: { ban_nome: string } | { ban_nome: string }[] | null;
 }
 
-interface PrevisaoSaldoRow {
-  pvi_data: string;
-  pvi_tipo: string;
-  pvi_valor: number;
+interface SaldoDiarioRow {
+  sdd_data: string;
+  sdd_saldo_inicial: number;
+  sdd_saldo_final: number;
 }
 
 interface AuditoriaLinha {
   data: string;
-  bancos: Record<string, number>;
-  somaBancos: number;
-  saldoRegistrado: number;
+  saldosPorBanco: Record<string, number>;
+  totalSaldosBancos: number;
+  saldoFinalDia: number;
   diferenca: number;
 }
 
 const toISODate = (date: Date): string => date.toISOString().split('T')[0];
 
 const gerarIntervaloDatas = (inicio: string, fim: string): string[] => {
-  if (!inicio) {
-    return [];
-  }
+  if (!inicio) return [];
   const datas: string[] = [];
   const dataInicio = new Date(`${inicio}T00:00:00`);
   const dataFim = fim ? new Date(`${fim}T00:00:00`) : dataInicio;
@@ -51,11 +49,12 @@ const formatarDataPt = (iso: string): string => {
   return `${dia}/${mes}/${ano}`;
 };
 
-const extrairRelacao = <T,>(valor: T | T[] | null | undefined): T | null => {
-  if (!valor) {
-    return null;
+const extrairNomeBanco = (relacao: any): string => {
+  if (!relacao) return 'Sem banco';
+  if (Array.isArray(relacao)) {
+    return relacao[0]?.ban_nome || 'Sem banco';
   }
-  return Array.isArray(valor) ? valor[0] ?? null : valor;
+  return relacao.ban_nome || 'Sem banco';
 };
 
 const AuditoriaSaldosDiariosPage: React.FC = () => {
@@ -79,122 +78,164 @@ const AuditoriaSaldosDiariosPage: React.FC = () => {
         setErro(null);
         const supabase = getSupabaseClient();
 
-        // Buscar saldos de um dia antes do início para calcular saldo inicial
+        // Buscar saldo diário de um dia antes para usar como saldo inicial
         const dataObj = new Date(inicio + 'T00:00:00');
         dataObj.setDate(dataObj.getDate() - 1);
-        const inicioAnterior = dataObj.toISOString().split('T')[0];
+        const diaAnterior = dataObj.toISOString().split('T')[0];
 
-        const [saldosRes, receitasRes, pagamentosAreaRes, pagamentosBancoRes, saldosDiariosRes] = await Promise.all([
+        // Buscar todos os dados necessários
+        const [saldosBancosRes, saldosDiariosRes, receitasRes, pagamentosAreaRes, pagamentosBancoRes] = await Promise.all([
           supabase
             .from('sdb_saldo_banco')
             .select('sdb_data, sdb_saldo, sdb_ban_id, ban_bancos(ban_nome)')
-            .gte('sdb_data', inicioAnterior)
-            .lte('sdb_data', fim),
+            .gte('sdb_data', inicio)
+            .lte('sdb_data', fim)
+            .order('sdb_data', { ascending: true }),
+          supabase
+            .from('sdd_saldo_diario')
+            .select('sdd_data, sdd_saldo_inicial, sdd_saldo_final')
+            .gte('sdd_data', diaAnterior)
+            .lte('sdd_data', fim)
+            .order('sdd_data', { ascending: true }),
           supabase
             .from('rec_receitas')
-            .select('rec_data, rec_valor')
+            .select('rec_data, rec_valor, rec_ctr_id, ctr_contas_receita(ctr_nome)')
             .gte('rec_data', inicio)
             .lte('rec_data', fim),
           supabase
             .from('pag_pagamentos_area')
             .select('pag_data, pag_valor')
-            .gte('rec_data', inicio)
-            .lte('rec_data', fim),
+            .gte('pag_data', inicio)
+            .lte('pag_data', fim),
           supabase
             .from('pbk_pagamentos_banco')
             .select('pbk_data, pbk_valor')
             .gte('pbk_data', inicio)
             .lte('pbk_data', fim),
-          supabase
-            .from('sdd_saldo_diario')
-            .select('sdd_data, sdd_saldo_final_realizado')
-            .gte('sdd_data', inicio)
-            .lte('sdd_data', fim),
         ]);
 
-        if (saldosRes.error) throw saldosRes.error;
+        if (saldosBancosRes.error) throw saldosBancosRes.error;
+        if (saldosDiariosRes.error) throw saldosDiariosRes.error;
         if (receitasRes.error) throw receitasRes.error;
         if (pagamentosAreaRes.error) throw pagamentosAreaRes.error;
         if (pagamentosBancoRes.error) throw pagamentosBancoRes.error;
-        if (saldosDiariosRes.error) throw saldosDiariosRes.error;
 
-        const saldos = (saldosRes.data as SaldoBancoRow[] | null) ?? [];
+        const saldosBancos = (saldosBancosRes.data as SaldoBancoRow[]) ?? [];
+        const saldosDiarios = saldosDiariosRes.data ?? [];
         const receitas = receitasRes.data ?? [];
         const pagamentosArea = pagamentosAreaRes.data ?? [];
         const pagamentosBanco = pagamentosBancoRes.data ?? [];
-        const saldosDiarios = saldosDiariosRes.data ?? [];
 
+        // Identificar bancos únicos
         const bancosUnicos = Array.from(
           new Set(
-            saldos.map((item) => extrairRelacao(item.ban_bancos)?.ban_nome?.trim() || 'Banco não informado'),
-          ),
+            saldosBancos.map((item) => extrairNomeBanco(item.ban_bancos))
+          )
         ).sort((a, b) => a.localeCompare(b, 'pt-BR'));
 
-        const mapaSaldosPorData = new Map<string, Map<string, number>>();
-        saldos.forEach((item) => {
-          const relacao = extrairRelacao(item.ban_bancos);
-          const nome = relacao?.ban_nome?.trim() || 'Banco não informado';
-          const valor = Number(item.sdb_saldo ?? 0);
-          const mapaDia = mapaSaldosPorData.get(item.sdb_data) ?? new Map<string, number>();
-          mapaDia.set(nome, (mapaDia.get(nome) ?? 0) + valor);
-          mapaSaldosPorData.set(item.sdb_data, mapaDia);
+        // Criar mapas por data
+        const mapaSaldosBancosPorData = new Map<string, Map<string, number>>();
+        saldosBancos.forEach((item) => {
+          const nomeBanco = extrairNomeBanco(item.ban_bancos);
+          if (!mapaSaldosBancosPorData.has(item.sdb_data)) {
+            mapaSaldosBancosPorData.set(item.sdb_data, new Map());
+          }
+          const mapaBancos = mapaSaldosBancosPorData.get(item.sdb_data)!;
+          mapaBancos.set(nomeBanco, Number(item.sdb_saldo ?? 0));
         });
 
-        // Criar mapa de saldos diários registrados (do resumo geral)
-        const mapaSaldosDiarios = new Map<string, number>();
+        // Criar mapas de saldo inicial e final registrados
+        const mapaSaldosIniciais = new Map<string, number>();
+        const mapaSaldosFinais = new Map<string, number>();
         saldosDiarios.forEach((item: any) => {
-          const valor = Number(item.sdd_saldo_final_realizado ?? 0);
-          mapaSaldosDiarios.set(item.sdd_data, valor);
+          mapaSaldosIniciais.set(item.sdd_data, Number(item.sdd_saldo_inicial ?? 0));
+          mapaSaldosFinais.set(item.sdd_data, Number(item.sdd_saldo_final ?? 0));
         });
 
-        // Criar mapas de receitas e despesas por data
-        const mapaReceitas = new Map<string, number>();
+        // Criar mapas de movimentação por data
+        const mapaReceitasPorData = new Map<string, number>();
+        const mapaAplicacoesPorData = new Map<string, number>();
+
         receitas.forEach((item: any) => {
+          const data = item.rec_data;
           const valor = Number(item.rec_valor ?? 0);
-          mapaReceitas.set(item.rec_data, (mapaReceitas.get(item.rec_data) ?? 0) + valor);
+          const contaNome = item.ctr_contas_receita?.ctr_nome || '';
+          const contaNomeNorm = contaNome.toUpperCase().trim();
+
+          const ehAplicacao = contaNomeNorm.includes('APLICACAO') || contaNomeNorm.includes('APLICAÇÃO');
+
+          if (ehAplicacao) {
+            // Aplicações: valores podem ser positivos (resgate) ou negativos (aplicação)
+            // Como não temos o tipo, consideramos o valor como está
+            mapaAplicacoesPorData.set(data, (mapaAplicacoesPorData.get(data) ?? 0) + valor);
+          } else {
+            mapaReceitasPorData.set(data, (mapaReceitasPorData.get(data) ?? 0) + valor);
+          }
         });
 
-        const mapaDespesas = new Map<string, number>();
+        const mapaPagamentosAreaPorData = new Map<string, number>();
         pagamentosArea.forEach((item: any) => {
+          const data = item.pag_data;
           const valor = Number(item.pag_valor ?? 0);
-          mapaDespesas.set(item.pag_data, (mapaDespesas.get(item.pag_data) ?? 0) + valor);
+          mapaPagamentosAreaPorData.set(data, (mapaPagamentosAreaPorData.get(data) ?? 0) + valor);
         });
+
+        const mapaPagamentosBancoPorData = new Map<string, number>();
         pagamentosBanco.forEach((item: any) => {
+          const data = item.pbk_data;
           const valor = Number(item.pbk_valor ?? 0);
-          mapaDespesas.set(item.pbk_data, (mapaDespesas.get(item.pbk_data) ?? 0) + valor);
+          mapaPagamentosBancoPorData.set(data, (mapaPagamentosBancoPorData.get(data) ?? 0) + valor);
         });
 
+        // Gerar linhas de auditoria
         const datas = gerarIntervaloDatas(inicio, fim);
-        const linhasCalculadas: AuditoriaLinha[] = datas
-          .map((data) => {
-            const mapaDia = mapaSaldosPorData.get(data) ?? new Map<string, number>();
-            const bancosDia: Record<string, number> = {};
-            let somaBancos = 0;
-            bancosUnicos.forEach((nome) => {
-              const valor = Number((mapaDia.get(nome) ?? 0).toFixed(2));
-              bancosDia[nome] = valor;
-              somaBancos += valor;
-            });
+        const linhasCalculadas: AuditoriaLinha[] = [];
+        let saldoFinalAnterior = mapaSaldosFinais.get(diaAnterior) ?? 0;
 
-            // Buscar saldo final registrado do resumo geral (tabela sdd_saldo_diario)
-            const saldoRegistrado = Number((mapaSaldosDiarios.get(data) ?? somaBancos).toFixed(2));
-            const diferenca = Number((somaBancos - saldoRegistrado).toFixed(2));
-            const possuiDados = somaBancos !== 0 || saldoRegistrado !== 0;
-            if (!possuiDados) {
-              return null;
-            }
-            return {
+        datas.forEach((data) => {
+          const saldosBancosDia = mapaSaldosBancosPorData.get(data);
+
+          // Calcular saldo final do dia
+          let saldoFinalDia = mapaSaldosFinais.get(data);
+
+          // Se não houver saldo final registrado, calcular
+          if (!saldoFinalDia || saldoFinalDia === 0) {
+            const saldoInicial = mapaSaldosIniciais.get(data) ?? saldoFinalAnterior;
+            const receitas = mapaReceitasPorData.get(data) ?? 0;
+            const pagArea = mapaPagamentosAreaPorData.get(data) ?? 0;
+            const pagBanco = mapaPagamentosBancoPorData.get(data) ?? 0;
+            const aplicacoes = mapaAplicacoesPorData.get(data) ?? 0;
+
+            saldoFinalDia = saldoInicial + receitas - pagArea - pagBanco + aplicacoes;
+          }
+
+          saldoFinalAnterior = saldoFinalDia;
+
+          const saldosPorBanco: Record<string, number> = {};
+          let totalSaldosBancos = 0;
+
+          bancosUnicos.forEach((banco) => {
+            const saldo = saldosBancosDia?.get(banco) ?? 0;
+            saldosPorBanco[banco] = Number(saldo.toFixed(2));
+            totalSaldosBancos += saldo;
+          });
+
+          totalSaldosBancos = Number(totalSaldosBancos.toFixed(2));
+          const diferenca = Number((totalSaldosBancos - saldoFinalDia).toFixed(2));
+
+          // Apenas incluir dias com algum dado
+          if (totalSaldosBancos !== 0 || saldoFinalDia !== 0) {
+            linhasCalculadas.push({
               data,
-              bancos: bancosDia,
-              somaBancos,
-              saldoRegistrado,
+              saldosPorBanco,
+              totalSaldosBancos,
+              saldoFinalDia,
               diferenca,
-            };
-          })
-          .filter((item): item is AuditoriaLinha => item !== null)
-          .sort((a, b) => b.data.localeCompare(a.data));
+            });
+          }
+        });
 
-        setLinhas(linhasCalculadas);
+        setLinhas(linhasCalculadas.reverse()); // Mais recente primeiro
         setBancos(bancosUnicos);
       } catch (error) {
         console.error('Erro ao carregar auditoria de saldos diários:', error);
@@ -203,29 +244,32 @@ const AuditoriaSaldosDiariosPage: React.FC = () => {
         setCarregando(false);
       }
     },
-    [],
+    []
   );
 
   useEffect(() => {
-    if (!periodoInicio || !periodoFim) {
-      return;
-    }
+    if (!periodoInicio || !periodoFim) return;
     carregarAuditoria(periodoInicio, periodoFim);
   }, [carregarAuditoria, periodoInicio, periodoFim]);
 
   const intervaloDatas = useMemo(
     () => gerarIntervaloDatas(periodoInicio, periodoFim),
-    [periodoInicio, periodoFim],
+    [periodoInicio, periodoFim]
   );
 
   const totaisResumo = useMemo(() => {
     if (!linhas.length) {
-      return { diasComDado: 0, divergencias: 0, maiorDiferenca: 0 };
+      return {
+        diasComDado: 0,
+        divergencias: 0,
+        maiorDiferenca: 0,
+      };
     }
-    const divergencias = linhas.filter((linha) => Math.abs(linha.diferenca) > 0.009);
+    const divergencias = linhas.filter((linha) => Math.abs(linha.diferenca) > 0.01);
     const maiorDiferenca = divergencias.reduce(
-      (acc, linha) => (Math.abs(linha.diferenca) > Math.abs(acc) ? linha.diferenca : acc),
-      0,
+      (acc, linha) =>
+        Math.abs(linha.diferenca) > Math.abs(acc) ? linha.diferenca : acc,
+      0
     );
     return {
       diasComDado: linhas.length,
@@ -238,7 +282,7 @@ const AuditoriaSaldosDiariosPage: React.FC = () => {
     <>
       <Header
         title="Auditoria de Saldos Diários"
-        subtitle="Compare os saldos registrados nos bancos com o saldo final informado na previsão diária"
+        subtitle="Compare a soma dos saldos dos bancos com o saldo final registrado no dia"
         actions={
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <Input
@@ -261,7 +305,7 @@ const AuditoriaSaldosDiariosPage: React.FC = () => {
               onChange={(event) => setPeriodoFim(event.target.value)}
             />
             <div className="text-sm text-gray-500">
-              Intervalo com {intervaloDatas.length} dia(s)
+              Intervalo: {intervaloDatas.length} dia(s)
             </div>
           </div>
         }
@@ -269,14 +313,14 @@ const AuditoriaSaldosDiariosPage: React.FC = () => {
 
       <div className="page-content space-y-6">
         {erro && (
-          <Card variant="danger" title="Não foi possível carregar a auditoria">
+          <Card variant="danger" title="Erro ao carregar auditoria">
             <p className="text-sm text-error-700">{erro}</p>
           </Card>
         )}
 
         {carregando ? (
           <div className="flex justify-center py-12">
-            <Loading text="Compilando saldos por banco..." />
+            <Loading text="Carregando auditoria de saldos..." />
           </div>
         ) : (
           <>
@@ -288,19 +332,23 @@ const AuditoriaSaldosDiariosPage: React.FC = () => {
               <div className="grid gap-4 md:grid-cols-3">
                 <div className="rounded-lg border border-gray-200 p-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Dias com movimentação
+                    Dias analisados
                   </p>
-                  <p className="text-2xl font-semibold text-gray-900">{totaisResumo.diasComDado}</p>
+                  <p className="text-2xl font-semibold text-gray-900">
+                    {totaisResumo.diasComDado}
+                  </p>
                 </div>
                 <div className="rounded-lg border border-gray-200 p-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
                     Dias com divergência
                   </p>
-                  <p className="text-2xl font-semibold text-error-600">{totaisResumo.divergencias}</p>
+                  <p className="text-2xl font-semibold text-error-600">
+                    {totaisResumo.divergencias}
+                  </p>
                 </div>
                 <div className="rounded-lg border border-gray-200 p-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Maior diferença absoluta
+                    Maior diferença
                   </p>
                   <p className="text-2xl font-semibold text-gray-900">
                     {formatCurrency(Math.abs(totaisResumo.maiorDiferenca))}
@@ -310,59 +358,80 @@ const AuditoriaSaldosDiariosPage: React.FC = () => {
             </Card>
 
             <Card
-              title="Detalhamento por dia"
-              subtitle="Saldos consolidados por banco comparados com o saldo final informado"
+              title="Detalhamento por Dia"
+              subtitle="Saldos dos bancos vs Saldo final do dia"
             >
               {linhas.length === 0 ? (
                 <p className="text-sm text-gray-500">
-                  Nenhum saldo foi encontrado para o período selecionado. Ajuste as datas para ampliar a busca.
+                  Nenhum dado encontrado para o período selecionado.
                 </p>
               ) : (
                 <div className="overflow-auto">
-                  <table className="min-w-full text-sm text-gray-700">
-                    <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                  <table className="min-w-full text-sm">
+                    <thead className="border-b-2 border-gray-300 bg-gray-50">
                       <tr>
-                        <th className="px-3 py-2 text-left">Data</th>
+                        <th className="px-3 py-3 text-left font-semibold text-gray-700">
+                          Data
+                        </th>
                         {bancos.map((banco) => (
-                          <th key={banco} className="px-3 py-2 text-right">
+                          <th
+                            key={banco}
+                            className="px-3 py-3 text-right font-semibold text-gray-700"
+                          >
                             {banco}
                           </th>
                         ))}
-                        <th className="px-3 py-2 text-right">Soma Bancos</th>
-                        <th className="px-3 py-2 text-right">Saldo Final Registrado</th>
-                        <th className="px-3 py-2 text-right">Diferença</th>
+                        <th className="px-3 py-3 text-right font-semibold text-blue-700">
+                          Total Saldos Bancos
+                        </th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-700">
+                          Saldo Final do Dia
+                        </th>
+                        <th className="px-3 py-3 text-right font-semibold text-error-700">
+                          Diferença
+                        </th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {linhas.map((linha) => (
-                        <tr key={linha.data}>
-                          <td className="px-3 py-2 text-left font-medium text-gray-900">
-                            {formatarDataPt(linha.data)}
-                          </td>
-                          {bancos.map((banco) => (
-                            <td key={`${linha.data}-${banco}`} className="px-3 py-2 text-right">
-                              {formatCurrency(linha.bancos[banco] ?? 0)}
-                            </td>
-                          ))}
-                          <td className="px-3 py-2 text-right font-semibold text-gray-900">
-                            {formatCurrency(linha.somaBancos)}
-                          </td>
-                          <td className="px-3 py-2 text-right font-semibold text-gray-900">
-                            {formatCurrency(linha.saldoRegistrado)}
-                          </td>
-                          <td
-                            className={`px-3 py-2 text-right font-semibold ${
-                              linha.diferenca === 0
-                                ? 'text-gray-600'
-                                : linha.diferenca > 0
-                                ? 'text-error-600'
-                                : 'text-success-600'
-                            }`}
+                    <tbody className="divide-y divide-gray-200">
+                      {linhas.map((linha) => {
+                        const temDivergencia = Math.abs(linha.diferenca) > 0.01;
+                        return (
+                          <tr
+                            key={linha.data}
+                            className={
+                              temDivergencia
+                                ? 'bg-red-50 hover:bg-red-100'
+                                : 'hover:bg-gray-50'
+                            }
                           >
-                            {formatCurrency(linha.diferenca)}
-                          </td>
-                        </tr>
-                      ))}
+                            <td className="px-3 py-3 font-medium text-gray-900">
+                              {formatarDataPt(linha.data)}
+                            </td>
+                            {bancos.map((banco) => (
+                              <td
+                                key={`${linha.data}-${banco}`}
+                                className="px-3 py-3 text-right text-gray-700"
+                              >
+                                {formatCurrency(linha.saldosPorBanco[banco] ?? 0)}
+                              </td>
+                            ))}
+                            <td className="px-3 py-3 text-right font-semibold text-blue-900">
+                              {formatCurrency(linha.totalSaldosBancos)}
+                            </td>
+                            <td className="px-3 py-3 text-right font-semibold text-gray-900">
+                              {formatCurrency(linha.saldoFinalDia)}
+                            </td>
+                            <td
+                              className={`px-3 py-3 text-right font-bold ${
+                                temDivergencia ? 'text-error-700' : 'text-gray-600'
+                              }`}
+                            >
+                              {temDivergencia && '⚠️ '}
+                              {formatCurrency(linha.diferenca)}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

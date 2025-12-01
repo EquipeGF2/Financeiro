@@ -61,17 +61,28 @@ export async function temLancamentosNaData(
 }
 
 /**
+ * Tipo de módulo para verificação de período liberado
+ */
+export type Modulo = 'saldo_diario' | 'previsao_semanal' | 'cobranca';
+
+/**
  * Verifica se a data está liberada manualmente na tabela de períodos
+ * para o módulo específico
  */
 export async function dataLiberadaManualmente(
   supabase: SupabaseClient<any, any, any>,
-  data: string
+  data: string,
+  modulo: Modulo = 'saldo_diario'
 ): Promise<boolean> {
   try {
+    // Mapear o módulo para o campo correspondente
+    const campoModulo = `per_${modulo}`;
+
     const { data: periodos, error } = await supabase
       .from('per_periodos_liberados')
       .select('per_id')
       .eq('per_ativo', true)
+      .eq(campoModulo, true)
       .lte('per_data_inicio', data)
       .gte('per_data_fim', data)
       .limit(1);
@@ -101,23 +112,28 @@ export function dataEstaNosUltimosDiasUteis(
 }
 
 /**
- * Verifica se uma data está liberada para edição
+ * Verifica se uma data está liberada para edição em um módulo específico
  *
  * Regras:
- * 1. Se foi liberada manualmente (per_periodos_liberados): LIBERADO
+ * 1. Se foi liberada manualmente (per_periodos_liberados) para o módulo: LIBERADO
  * 2. Se está nos últimos 4 dias úteis: SEMPRE LIBERADO (independente de ter lançamentos)
  * 3. Caso contrário: BLOQUEADO
+ *
+ * @param supabase - Cliente Supabase
+ * @param data - Data no formato ISO (YYYY-MM-DD)
+ * @param modulo - Módulo a verificar ('saldo_diario', 'previsao_semanal', 'cobranca')
  */
 export async function dataLiberadaParaEdicao(
   supabase: SupabaseClient<any, any, any>,
-  data: string
+  data: string,
+  modulo: Modulo = 'saldo_diario'
 ): Promise<{
   liberada: boolean;
   motivo: string;
 }> {
   try {
     // 1. Verifica se foi liberada manualmente (prioridade máxima)
-    const liberadaManual = await dataLiberadaManualmente(supabase, data);
+    const liberadaManual = await dataLiberadaManualmente(supabase, data, modulo);
     if (liberadaManual) {
       return {
         liberada: true,
