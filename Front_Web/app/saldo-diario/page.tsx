@@ -13,6 +13,7 @@ import {
 import { getUserSession } from '@/lib/userSession';
 import { evaluateMath, formatCurrency } from '@/lib/mathParser';
 import { traduzirErroSupabase } from '@/lib/supabaseErrors';
+import { dataLiberadaParaEdicao } from '@/lib/verificarPeriodoLiberado';
 
 type Mensagem = { tipo: 'sucesso' | 'erro' | 'info'; texto: string };
 type Processo = 'area' | 'receita' | 'banco' | 'saldo';
@@ -178,14 +179,21 @@ const formatarData = (isoDate: string): string => {
   }).format(data);
 };
 
-const calcularUltimoDiaUtilAnterior = (): string => {
+const calcularUltimoDiaUtil = (): string => {
   const hoje = new Date();
-  const data = new Date(hoje);
+  const diaSemana = hoje.getDay();
 
+  // Se hoje é dia útil, retorna hoje
+  if (diaSemana !== 0 && diaSemana !== 6) {
+    return hoje.toISOString().split('T')[0];
+  }
+
+  // Se não, procura o último dia útil
+  const data = new Date(hoje);
   for (let i = 1; i <= 7; i += 1) {
     data.setDate(hoje.getDate() - i);
-    const diaSemana = data.getDay();
-    if (diaSemana !== 0 && diaSemana !== 6) {
+    const dia = data.getDay();
+    if (dia !== 0 && dia !== 6) {
       return data.toISOString().split('T')[0];
     }
   }
@@ -281,13 +289,15 @@ const formatarValorParaInput = (valor: number | null | undefined): string => {
 };
 
 const SaldoDiarioPage: React.FC = () => {
-  const ultimoDiaUtil = useMemo(() => calcularUltimoDiaUtilAnterior(), []);
+  const ultimoDiaUtil = useMemo(() => calcularUltimoDiaUtil(), []);
   const [dataReferencia, setDataReferencia] = useState(ultimoDiaUtil);
 
   const [usuario, setUsuario] = useState<UsuarioRow | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [atualizando, setAtualizando] = useState(false);
+  const [dataLiberada, setDataLiberada] = useState(true);
+  const [motivoBloqueio, setMotivoBloqueio] = useState<string>('');
 
   const [pagamentosArea, setPagamentosArea] = useState<PagamentoArea[]>([]);
   const [receitas, setReceitas] = useState<Receita[]>([]);
@@ -364,7 +374,7 @@ const SaldoDiarioPage: React.FC = () => {
     saldo: null,
   });
 
-  const edicaoLiberada = dataReferencia === ultimoDiaUtil;
+  const edicaoLiberada = dataLiberada;
 
   useEffect(() => {
     setPagamentosAreaForm((prev) => sincronizarMapa(areaOptions, prev));
@@ -587,6 +597,27 @@ const SaldoDiarioPage: React.FC = () => {
 
     atualizar();
   }, [usuario, dataReferencia, carregarMovimentacoes]);
+
+  // Verifica se a data está liberada para edição
+  useEffect(() => {
+    const verificarDataLiberada = async () => {
+      try {
+        const supabase = getSupabaseClient();
+        const resultado = await dataLiberadaParaEdicao(supabase, dataReferencia);
+
+        setDataLiberada(resultado.liberada);
+        setMotivoBloqueio(resultado.motivo);
+      } catch (error) {
+        console.error('Erro ao verificar data liberada:', error);
+        setDataLiberada(false);
+        setMotivoBloqueio('Erro ao verificar permissão');
+      }
+    };
+
+    if (dataReferencia) {
+      verificarDataLiberada();
+    }
+  }, [dataReferencia]);
 
   const limparMensagem = (processo: Processo) => atualizarMensagem(processo, null);
 
@@ -1805,8 +1836,6 @@ const SaldoDiarioPage: React.FC = () => {
               type="date"
               value={dataReferencia}
               onChange={(event) => setDataReferencia(event.target.value)}
-              min={ultimoDiaUtil}
-              max={ultimoDiaUtil}
             />
             <Button variant="secondary" onClick={handleAtualizar} loading={atualizando}>
               Atualizar
@@ -1836,9 +1865,30 @@ const SaldoDiarioPage: React.FC = () => {
         )}
 
         {!edicaoLiberada && (
-          <div className="rounded-md border border-warning-200 bg-warning-50 px-4 py-3 text-warning-800">
-            Os formulários estão bloqueados porque o dia selecionado não é o último dia útil. Ajuste a data para
-            {` ${formatarData(ultimoDiaUtil)}`} para registrar novos valores.
+          <div className="rounded-md border border-warning-200 bg-warning-50 px-4 py-3">
+            <div className="flex items-start gap-2">
+              <svg className="h-5 w-5 text-warning-600 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              <div>
+                <p className="font-semibold text-warning-800">Período bloqueado para edição</p>
+                <p className="text-warning-700 mt-1">{motivoBloqueio}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {edicaoLiberada && motivoBloqueio && (
+          <div className="rounded-md border border-green-200 bg-green-50 px-4 py-3">
+            <div className="flex items-start gap-2">
+              <svg className="h-5 w-5 text-green-600 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+              <div>
+                <p className="font-semibold text-green-800">Período liberado</p>
+                <p className="text-green-700 mt-1">{motivoBloqueio}</p>
+              </div>
+            </div>
           </div>
         )}
 
