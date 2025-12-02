@@ -116,6 +116,8 @@ O deploy é automático via Vercel quando há push na branch `main`.
 - Correção da liberação de períodos de cobrança, respeitando datas liberadas além do intervalo padrão.
 - Centralização do cliente Supabase no frontend para evitar múltiplas instâncias do GoTrue no navegador.
 - Persistência automática do saldo diário consolidado na tabela `sdd_saldo_diario`, garantindo trilha de auditoria.
+- Função de backfill para preencher o saldo diário retroativo (inclusive períodos fechados) a partir dos saldos bancários
+  consolidados.
 
 ## 📝 License
 
