@@ -196,10 +196,14 @@ const AuditoriaSaldosDiariosPage: React.FC = () => {
           const saldosBancosDia = mapaSaldosBancosPorData.get(data);
 
           // Calcular saldo final do dia
-          let saldoFinalDia = mapaSaldosFinais.get(data);
+          const saldoFinalRegistrado = mapaSaldosFinais.get(data);
+          let saldoFinalDia =
+            saldoFinalRegistrado === undefined || saldoFinalRegistrado === null
+              ? undefined
+              : Number(saldoFinalRegistrado);
 
           // Se não houver saldo final registrado, calcular
-          if (!saldoFinalDia || saldoFinalDia === 0) {
+          if (saldoFinalDia === undefined) {
             const saldoInicial = mapaSaldosIniciais.get(data) ?? saldoFinalAnterior;
             const receitas = mapaReceitasPorData.get(data) ?? 0;
             const pagArea = mapaPagamentosAreaPorData.get(data) ?? 0;
