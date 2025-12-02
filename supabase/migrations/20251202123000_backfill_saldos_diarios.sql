@@ -33,10 +33,9 @@ BEGIN
 
   RETURN QUERY WITH totais AS (
     SELECT
-      sdb_data AS data_referencia,
-      ROUND(SUM(sdb_saldo)::numeric, 2) AS saldo_final
-    FROM financas.sdb_saldo_banco
-    GROUP BY sdb_data
+      sdd_data AS data_referencia,
+      sdd_saldo_final AS saldo_final
+    FROM financas.sdd_saldo_diario
   ), calculado AS (
     SELECT
       data_referencia,
