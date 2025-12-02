@@ -503,7 +503,7 @@ export default function ImportarSaldoDiarioPage() {
         title="Confirmar importação"
         message={confirmacao.mensagem}
         onConfirm={confirmacao.onConfirm}
-        onCancel={() => setConfirmacao((prev) => ({ ...prev, aberto: false }))}
+        onClose={() => setConfirmacao((prev) => ({ ...prev, aberto: false }))}
       />
     </>
   );
