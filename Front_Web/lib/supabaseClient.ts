@@ -12,6 +12,8 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const SCHEMA = "financas" as const;
 
+let supabaseBrowserClient: SupabaseClient<any, any, any> | null = null;
+
 function assertEnv() {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     throw new Error(
@@ -71,13 +73,8 @@ export function getSupabaseClient(options: ClientOptions = {}) {
     throw new Error("getSupabaseClient() só pode ser usado no browser");
   }
 
-  const sessionHeaders: Record<string, string> = {};
-
-  if (options.includeSessionHeader !== false) {
-    const userId = getUserId();
-    if (userId) {
-      sessionHeaders["x-user-id"] = userId;
-    }
+  if (supabaseBrowserClient) {
+    return supabaseBrowserClient;
   }
 
   const extraHeaders = Object.entries(options.headers ?? {}).reduce(
@@ -90,15 +87,27 @@ export function getSupabaseClient(options: ClientOptions = {}) {
     {} as Record<string, string>
   );
 
-  return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  supabaseBrowserClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     db: { schema: SCHEMA },
     global: {
-      headers: {
-        ...sessionHeaders,
-        ...extraHeaders,
+      fetch: async (input, init) => {
+        const headers = new Headers(init?.headers ?? {});
+
+        const userId = getUserId();
+        if (userId && !headers.has("x-user-id")) {
+          headers.set("x-user-id", userId);
+        }
+
+        Object.entries(extraHeaders).forEach(([key, value]) => {
+          headers.set(key, value);
+        });
+
+        return fetch(input, { ...init, headers });
       },
     },
   });
+
+  return supabaseBrowserClient;
 }
 
 function ensureUserIdFromBrowser(): string | null {

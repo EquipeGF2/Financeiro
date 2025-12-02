@@ -111,6 +111,12 @@ O deploy é automático via Vercel quando há push na branch `main`.
 
 **URL de Produção:** https://financeiro-germani.vercel.app
 
+## 🔧 Ajustes recentes
+
+- Correção da liberação de períodos de cobrança, respeitando datas liberadas além do intervalo padrão.
+- Centralização do cliente Supabase no frontend para evitar múltiplas instâncias do GoTrue no navegador.
+- Persistência automática do saldo diário consolidado na tabela `sdd_saldo_diario`, garantindo trilha de auditoria.
+
 ## 📝 License
 
 Private - EquipeGF2
