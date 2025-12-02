@@ -60,6 +60,20 @@ const RelatoriosHomePage: React.FC = () => {
             </div>
           </Card>
           <Card
+            title="Saldo de Aplicação"
+            subtitle="Acompanhe o extrato diário das aplicações e resgates com saldo inicial e final."
+            variant="primary"
+          >
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Consulte o demonstrativo de aplicação por período, com movimentação diária e variação do saldo consolidado.
+              </p>
+              <Link href="/relatorios/aplicacao" className="inline-block">
+                <Button variant="primary">Abrir relatório</Button>
+              </Link>
+            </div>
+          </Card>
+          <Card
             title="Auditoria de Saldos"
             subtitle="Concilie o saldo registrado na previsão com os saldos diários informados pelos bancos."
             variant="danger"
@@ -69,6 +83,20 @@ const RelatoriosHomePage: React.FC = () => {
                 Identifique divergências entre os saldos informados e a consolidação diária de cada banco.
               </p>
               <Link href="/auditoria/saldos-diarios" className="inline-block">
+                <Button variant="primary">Abrir auditoria</Button>
+              </Link>
+            </div>
+          </Card>
+          <Card
+            title="Auditoria de Receitas"
+            subtitle="Verifique se o total diário lançado na cobrança confere com as receitas registradas no saldo diário."
+            variant="danger"
+          >
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Identifique rapidamente divergências entre os valores consolidados na área de cobrança e os lançamentos de receita do saldo diário.
+              </p>
+              <Link href="/auditoria/receitas" className="inline-block">
                 <Button variant="primary">Abrir auditoria</Button>
               </Link>
             </div>

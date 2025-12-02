@@ -6,7 +6,7 @@ import { Header } from '@/components/layout';
 import { Button, Card } from '@/components/ui';
 import { ConfirmModal } from '@/components/ui/Modal';
 import Toast from '@/components/ui/Toast';
-import { getUserSession } from '@/lib/userSession';
+import { getUserSession, isAdminUserName } from '@/lib/userSession';
 
 type LinhaArquivo = {
   id: string;
@@ -76,6 +76,7 @@ export default function ImportarDadosGrid() {
   const [processando, setProcessando] = useState(false);
   const [importando, setImportando] = useState(false);
   const session = getUserSession();
+  const isAdmin = isAdminUserName(session.userName);
 
   // Estados para Toast e Modal
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'warning' | 'info' } | null>(null);
@@ -355,10 +356,10 @@ export default function ImportarDadosGrid() {
 
       <div className="page-content space-y-6">
         {/* Aviso de Permissão */}
-        {session.userName?.toUpperCase() !== 'GENARO' && (
+        {!isAdmin && (
           <Card title="⚠️ Permissão Necessária" variant="danger">
             <p className="text-error-700">
-              Apenas o usuário <strong>Genaro</strong> pode importar dados.
+              Apenas os usuários <strong>Genaro</strong> e <strong>Angelo</strong> podem importar dados.
             </p>
           </Card>
         )}
@@ -371,7 +372,7 @@ export default function ImportarDadosGrid() {
               type="file"
               accept=".xlsx,.xls,.csv"
               onChange={handleArquivoSelecionado}
-              disabled={processando || session.userName?.toUpperCase() !== 'GENARO'}
+              disabled={processando || !isAdmin}
               className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 cursor-pointer disabled:opacity-50"
             />
             {arquivo && (
@@ -554,7 +555,7 @@ export default function ImportarDadosGrid() {
                 <Button
                   variant="primary"
                   onClick={iniciarImportacao}
-                  disabled={importando || linhas.filter(l => l.incluir).length === 0 || session.userName?.toUpperCase() !== 'GENARO'}
+                  disabled={importando || linhas.filter(l => l.incluir).length === 0 || !isAdmin}
                   loading={importando}
                 >
                   {importando ? 'Importando...' : '✅ Confirmar e Importar'}

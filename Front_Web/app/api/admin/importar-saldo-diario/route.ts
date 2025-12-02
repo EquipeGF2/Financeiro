@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getOrCreateUser, getSupabaseServer } from '@/lib/supabaseClient';
+import { isAdminUserName } from '@/lib/userSession';
 
 type LinhaSaldoDiario = {
   data: string | null;
@@ -36,8 +37,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Usuário não autenticado' }, { status: 401 });
     }
 
-    if (userName?.toUpperCase() !== 'GENARO') {
-      return NextResponse.json({ error: 'Apenas o usuário Genaro tem permissão' }, { status: 403 });
+    if (!isAdminUserName(userName)) {
+      return NextResponse.json({ error: 'Apenas os usuários Genaro e Angelo têm permissão' }, { status: 403 });
     }
 
     if (!linhas || linhas.length === 0) {

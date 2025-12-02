@@ -10,6 +10,8 @@ import {
   USER_NAME_STORAGE_KEY,
 } from "./sessionKeys";
 
+const ADMIN_USERS = ["GENARO", "ANGELO"] as const;
+
 function isBrowser(): boolean {
   return (
     typeof window !== "undefined" &&
@@ -208,6 +210,17 @@ export type UserSessionSnapshot = {
   userEmail: string | null;
   displayName: string;
 };
+
+/**
+ * Verifica se o nome informado corresponde a um usuário administrador.
+ */
+export function isAdminUserName(name?: string | null): boolean {
+  if (!name) {
+    return false;
+  }
+
+  return ADMIN_USERS.includes(name.trim().toUpperCase() as (typeof ADMIN_USERS)[number]);
+}
 
 /**
  * Retorna informações completas da sessão
