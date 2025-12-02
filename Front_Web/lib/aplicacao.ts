@@ -43,7 +43,11 @@ const removerAcentos = (valor: string) =>
 const ehMovimentacaoAplicacao = (texto?: string | null) => {
   if (!texto) return false;
   const normalizado = removerAcentos(texto);
-  return normalizado.includes('APLICACAO') || normalizado.includes('INVEST');
+
+  // Ignora lançamentos ligados à conta de investimento, que não devem compor o saldo da aplicação
+  if (normalizado.includes('INVESTIMENTO')) return false;
+
+  return normalizado.includes('APLICACAO');
 };
 
 const ehResgate = (texto?: string | null) => {
