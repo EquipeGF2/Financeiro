@@ -1,13 +1,13 @@
 # Guia de Registro de Saldo Inicial e Controle de Aplicações
 
-Este documento explica como configurar e utilizar o sistema de saldo inicial, movimentações diárias e controle de aplicações financeiras.
+Este documento explica como configurar e utilizar o sistema de saldo inicial, movimentações diárias e controle de aplicações financeiras. O registro de **saldo_inicial** representa o valor real existente no momento em que os controles começaram, mesmo que seja gravado na tabela `pvi_previsao_itens`.
 
 ---
 
 ## 📋 Sumário
 
 1. [Onde Registrar o Saldo Inicial](#onde-registrar-o-saldo-inicial)
-2. [Tipos de Registros em Previsão](#tipos-de-registros-em-previsão)
+2. [Tipos de Registros e Previsão](#tipos-de-registros-e-previsão)
 3. [Controle de Aplicações Financeiras](#controle-de-aplicações-financeiras)
 4. [Importação de Dados Históricos](#importação-de-dados-históricos)
 5. [Auditoria de Saldos](#auditoria-de-saldos)
@@ -19,7 +19,7 @@ Este documento explica como configurar e utilizar o sistema de saldo inicial, mo
 
 ### Tabela: `pvi_previsao_itens`
 
-O saldo inicial é registrado na tabela **`pvi_previsao_itens`** com tipo específico.
+O saldo inicial é registrado na tabela **`pvi_previsao_itens`** com tipo específico. Apesar do nome da tabela, esse lançamento **não é uma previsão**: ele fixa o valor real consolidado (ou da aplicação) existente na data de início dos controles.
 
 ### Estrutura do Registro
 
@@ -28,33 +28,35 @@ INSERT INTO financas.pvi_previsao_itens (
   pvi_data,
   pvi_tipo,
   pvi_valor,
+  pvi_categoria,
   pvi_usr_id
 ) VALUES (
-  '2025-01-01',           -- Data do primeiro dia útil
-  'saldo_inicial',        -- Tipo do registro
-  100000.00,              -- Valor do saldo inicial consolidado
-  'uuid-do-usuario'       -- ID do usuário responsável
+  '2025-01-01',                 -- Data de referência
+  'saldo_inicial',              -- Tipo do registro (valores permitidos: receita, gasto, saldo_inicial, saldo_diario, saldo_acumulado)
+  100000.00,                    -- Valor real consolidado existente no início do controle
+  'Saldo inicial consolidado',  -- Texto livre sobre a natureza do registro
+  'uuid-do-usuario'             -- ID do usuário responsável
 );
 ```
 
 ### Campos Importantes
 
-- **`pvi_data`**: Data de referência (primeiro dia do período)
+- **`pvi_data`**: Data de referência (primeiro dia do período controlado)
 - **`pvi_tipo`**: Use `'saldo_inicial'` para o saldo inicial
-- **`pvi_valor`**: Valor total consolidado de todos os bancos
+- **`pvi_valor`**: Valor total consolidado de todos os bancos (valor real, não previsto)
 - **`pvi_are_id`**: NULL (não se aplica a áreas)
 - **`pvi_ctr_id`**: NULL (não se aplica a contas específicas)
 - **`pvi_ban_id`**: NULL (consolidado de todos os bancos)
 
 ---
 
-## 📊 Tipos de Registros em Previsão
+## 📊 Tipos de Registros e Previsão
 
-A tabela `pvi_previsao_itens` aceita os seguintes tipos (`pvi_tipo`):
+A tabela `pvi_previsao_itens` aceita os seguintes tipos (`pvi_tipo`). Apenas receitas/gastos/saldos diários podem ser usados para previsão; o `saldo_inicial` sempre representa valor já existente.
 
 | Tipo | Descrição | Uso |
 |------|-----------|-----|
-| `saldo_inicial` | Saldo consolidado inicial | Primeiro dia do período |
+| `saldo_inicial` | Saldo consolidado real no início do controle | Primeiro dia do período |
 | `saldo_final` | Saldo final do dia | Gerado automaticamente ou manual |
 | `saldo` | Saldo genérico | Previsão de saldo |
 | `saldo_diario` | Saldo previsto para o dia | Planejamento diário |
@@ -89,22 +91,28 @@ O sistema controla aplicações através de áreas específicas cadastradas na t
 
 ### Registro do Saldo Inicial de Aplicação
 
+Use o `saldo_inicial` para armazenar o valor real que já estava aplicado no início dos controles. Diferencie-o com categoria/observação para identificá-lo na conciliação.
+
 ```sql
--- Registrar saldo inicial de aplicação
+-- Registrar saldo inicial de aplicação (valor real existente na data de início)
 INSERT INTO financas.pvi_previsao_itens (
   pvi_data,
   pvi_tipo,
   pvi_valor,
-  pvi_descricao,
+  pvi_categoria,
+  pvi_observacao,
   pvi_usr_id
 ) VALUES (
-  '2025-01-01',
-  'saldo_aplicacao',
+  '2025-03-20',
+  'saldo_inicial',                      -- Valores permitidos no CHECK de pvi_tipo
   50000.00,
-  'Saldo inicial em aplicações financeiras',
+  'Saldo inicial da aplicação',         -- Categoria para identificar que o valor é da aplicação
+  'Valor aplicado já existente em 20/03/2025 ao iniciar o controle',
   'uuid-do-usuario'
 );
 ```
+
+> ⚠️ O campo `pvi_tipo` aceita apenas `receita`, `gasto`, `saldo_inicial`, `saldo_diario` e `saldo_acumulado`. Usar `saldo_inicial` com uma categoria/observação específica evita erros como “column "pvi_descricao" does not exist” e garante compatibilidade com o esquema atual.
 
 ### Cálculo Automático
 
@@ -129,15 +137,16 @@ O saldo de aplicação é calculado diariamente:
 
 ### Passo 1: Inserir Saldo Inicial
 
-Antes de importar dados históricos, **obrigatoriamente** registre o saldo inicial:
+Antes de importar dados históricos, **obrigatoriamente** registre o saldo inicial (valor real consolidado do dia anterior ao início dos controles):
 
 ```sql
 INSERT INTO financas.pvi_previsao_itens (
-  pvi_data, pvi_tipo, pvi_valor, pvi_usr_id
+  pvi_data, pvi_tipo, pvi_valor, pvi_categoria, pvi_usr_id
 ) VALUES (
   '2024-12-31',            -- Último dia do período anterior
-  'saldo_inicial',
-  150000.00,               -- Saldo consolidado de todos os bancos
+  'saldo_inicial',         -- Tipo permitido pelo CHECK de pvi_tipo
+  150000.00,               -- Saldo consolidado de todos os bancos (valor real)
+  'Saldo inicial consolidado',
   'uuid-do-usuario'
 );
 ```
@@ -231,7 +240,8 @@ Na tela **Movimentação > Saldo Diário**, os 4 cards exibem:
 ```sql
 -- Atualizar saldo inicial
 UPDATE financas.pvi_previsao_itens
-SET pvi_valor = 200000.00
+SET pvi_valor = 200000.00,
+    pvi_categoria = 'Saldo inicial ajustado'
 WHERE pvi_data = '2025-01-01'
   AND pvi_tipo = 'saldo_inicial';
 ```
@@ -242,7 +252,7 @@ Sim, mas recomenda-se ter apenas um por data. Se houver múltiplos, o sistema us
 
 ### 4. Como registrar saldo de aplicação no primeiro dia?
 
-Use um INSERT separado com `pvi_tipo = 'saldo_aplicacao'` e o valor inicial em aplicações.
+Use um INSERT com `pvi_tipo = 'saldo_inicial'` e diferencie pelo `pvi_categoria`/`pvi_observacao` para indicar que se refere à aplicação. Lembre-se: ele representa o valor **já aplicado** no dia em que o controle começou, não uma previsão futura.
 
 ---
 
@@ -257,5 +267,5 @@ Para dúvidas ou problemas:
 
 ---
 
-**Última atualização**: 12/11/2025
-**Versão do documento**: 1.0
+**Última atualização**: 14/11/2025  
+**Versão do documento**: 1.2

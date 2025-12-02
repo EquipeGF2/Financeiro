@@ -100,12 +100,12 @@ Financeiro/
 ├── supabase/               # Database migrations
 │   └── migrations/         # 25+ SQL migration files
 ├── .github/workflows/      # CI/CD pipelines
-├── docs/                   # Comprehensive documentation
+├── docs/                   # Comprehensive documentation (inclui guias operacionais)
+│   └── SALDO_INICIAL.md    # Guia de saldo inicial e aplicação
 ├── scripts/                # Utility scripts
 ├── templates/              # Template files
 ├── config/                 # Configuration files
 ├── README.md               # Project overview
-├── SALDO_INICIAL.md        # Initial balance setup guide
 └── CLAUDE.md               # This file
 ```
 
