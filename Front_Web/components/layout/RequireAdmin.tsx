@@ -34,7 +34,7 @@ export function RequireAdmin({ children }: { children: React.ReactNode }) {
   if (status !== 'autorizado') {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
-        <Loading message="Verificando permissões de acesso..." />
+        <Loading text="Verificando permissões de acesso..." />
       </div>
     );
   }
