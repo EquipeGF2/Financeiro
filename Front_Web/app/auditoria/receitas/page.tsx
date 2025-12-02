@@ -66,7 +66,7 @@ const AuditoriaReceitasPage: React.FC = () => {
             .order('crt_data', { ascending: true }),
           supabase
             .from('rec_receitas')
-            .select('rec_data, rec_valor')
+            .select('rec_data, rec_valor, ctr_contas_receita(ctr_nome)')
             .gte('rec_data', inicio)
             .lte('rec_data', fim),
         ]);
@@ -83,6 +83,15 @@ const AuditoriaReceitasPage: React.FC = () => {
         (receitasSaldoRes.data ?? []).forEach((item: any) => {
           const data = item.rec_data as string;
           const valor = Number(item.rec_valor ?? 0);
+          const contaNome = Array.isArray(item.ctr_contas_receita)
+            ? item.ctr_contas_receita[0]?.ctr_nome ?? ''
+            : item.ctr_contas_receita?.ctr_nome ?? '';
+          const contaNomeNormalizado = contaNome.toUpperCase().trim();
+          const ehAplicacao =
+            contaNomeNormalizado.includes('APLICACAO') || contaNomeNormalizado.includes('APLICAÇÃO');
+
+          if (ehAplicacao) return;
+
           mapaSaldoDiario.set(data, (mapaSaldoDiario.get(data) ?? 0) + valor);
         });
 
