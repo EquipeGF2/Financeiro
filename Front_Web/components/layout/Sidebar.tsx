@@ -323,6 +323,20 @@ const navigationSections: NavSection[] = [
           </svg>
         ),
       },
+      {
+        label: 'Recalcular Saldos Diários',
+        href: '/admin/recalcular-saldo-diario',
+        icon: (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M4 4v5h.582m0 0A2.999 2.999 0 0112 9c0 1.306-.835 2.418-2.004 2.83m-5.414-3.83H3m2.168 0C4.458 8.344 4 7.246 4 6a4 4 0 114 4c0-.338-.03-.669-.086-.99M20 20v-5h-.581m0 0A3 3 0 0012 15c0 1.306.835 2.418 2.004 2.83m5.415-3.83H21m-2.168 0A4.002 4.002 0 0120 18a4 4 0 11-4-4c.338 0 .669.03.99.086"
+            />
+          </svg>
+        ),
+      },
     ],
   },
 ];
