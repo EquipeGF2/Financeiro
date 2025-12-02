@@ -306,7 +306,7 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
       try {
         const { data: registroExistente, error: erroBuscaAtual } = await supabase
           .from('sdd_saldo_diario')
-          .select('sdd_id, sdd_criado_em')
+          .select('sdd_id, sdd_criado_em, sdd_saldo_inicial')
           .eq('sdd_data', data)
           .maybeSingle();
 
@@ -325,7 +325,7 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
         const saldoInicialDia =
           registroAnterior?.sdd_saldo_final !== undefined && registroAnterior?.sdd_saldo_final !== null
             ? Number(registroAnterior.sdd_saldo_final)
-            : resumo.saldoInicialRealizado;
+            : registroExistente?.sdd_saldo_inicial ?? resumo.saldoInicialRealizado;
 
         const { error: erroUpsert } = await supabase
           .from('sdd_saldo_diario')
@@ -364,7 +364,15 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
         const supabase = getSupabaseClient();
 
         // Todos os usuários podem visualizar todos os dados
-        const [previsoesRes, gastosRes, receitasRes, saldosRes, saldosAnterioresRes] = await Promise.all([
+        const [
+          previsoesRes,
+          gastosRes,
+          receitasRes,
+          saldosRes,
+          saldoDiarioAnteriorRes,
+          saldoDiarioAtualRes,
+          primeiroSaldoDiarioRes,
+        ] = await Promise.all([
           supabase
             .from('pvi_previsao_itens')
             .select(
@@ -383,35 +391,44 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
             .from('sdb_saldo_banco')
             .select('sdb_saldo, sdb_ban_id, ban_bancos(ban_nome, ban_numero_conta)')
             .eq('sdb_data', data),
-          // Buscar saldos bancários da última data anterior disponível
           supabase
-            .from('sdb_saldo_banco')
-            .select('sdb_data, sdb_saldo')
-            .lt('sdb_data', data)
-            .order('sdb_data', { ascending: false })
-            .limit(100), // Pegamos vários registros para encontrar a última data completa
+            .from('sdd_saldo_diario')
+            .select('sdd_data, sdd_saldo_final')
+            .lt('sdd_data', data)
+            .order('sdd_data', { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+          supabase
+            .from('sdd_saldo_diario')
+            .select('sdd_saldo_inicial, sdd_data')
+            .eq('sdd_data', data)
+            .maybeSingle(),
+          supabase
+            .from('sdd_saldo_diario')
+            .select('sdd_data, sdd_saldo_inicial')
+            .order('sdd_data', { ascending: true })
+            .limit(1)
+            .maybeSingle(),
         ]);
 
         if (previsoesRes.error) throw previsoesRes.error;
         if (gastosRes.error) throw gastosRes.error;
         if (receitasRes.error) throw receitasRes.error;
         if (saldosRes.error) throw saldosRes.error;
-        if (saldosAnterioresRes.error) throw saldosAnterioresRes.error;
+        if (saldoDiarioAnteriorRes.error) throw saldoDiarioAnteriorRes.error;
+        if (saldoDiarioAtualRes.error) throw saldoDiarioAtualRes.error;
+        if (primeiroSaldoDiarioRes.error) throw primeiroSaldoDiarioRes.error;
 
         const previsoes = normalizeRelation(previsoesRes.data as MaybeArray<PrevisaoRow>);
         const pagamentosArea = (gastosRes.data as MaybeArray<PagamentoAreaRow>) ?? [];
         const receitas = (receitasRes.data as MaybeArray<ReceitaRow>) ?? [];
         const saldosBancarios = (saldosRes.data as MaybeArray<SaldoBancoRow>) ?? [];
-        const saldosAnterioresData = (saldosAnterioresRes.data as any[]) ?? [];
-
-        // Calcular saldo anterior: pegar a última data disponível e somar todos os saldos
-        let saldoAnteriorCalculado = 0;
-        if (saldosAnterioresData.length > 0) {
-          const ultimaData = saldosAnterioresData[0].sdb_data;
-          saldoAnteriorCalculado = saldosAnterioresData
-            .filter((s: any) => s.sdb_data === ultimaData)
-            .reduce((acc: number, s: any) => acc + arredondar(toNumber(s.sdb_saldo)), 0);
-        }
+        const saldoFinalAnterior = saldoDiarioAnteriorRes.data?.sdd_saldo_final;
+        const saldoInicialAtualRegistrado = saldoDiarioAtualRes.data?.sdd_saldo_inicial;
+        const primeiroSaldoInicialRegistrado =
+          primeiroSaldoDiarioRes.data?.sdd_data === data
+            ? primeiroSaldoDiarioRes.data?.sdd_saldo_inicial
+            : undefined;
 
         const mapaGastos = new Map<string, { titulo: string; previsto: number; realizado: number }>();
         const mapaReceitas = new Map<string, { titulo: string; previsto: number; realizado: number }>();
@@ -554,12 +571,18 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
           saldoFinalPrevisto = arredondar(saldoInicialPrevisto + resultadoPrevisto);
         }
 
-        // Usar o saldo anterior baseado na última data disponível nos registros bancários
-        const saldoInicialRealizado = arredondar(saldoAnteriorCalculado);
+        // Priorizar o saldo final do dia anterior registrado em sdd_saldo_diario,
+        // mantendo o saldo inicial do primeiro dia caso não exista histórico prévio
+        const saldoInicialRealizado = arredondar(
+          saldoFinalAnterior ??
+            saldoInicialAtualRegistrado ??
+            primeiroSaldoInicialRegistrado ??
+            saldoInicialPrevisto,
+        );
 
         // Calcular saldo final do dia: saldo anterior + receitas realizadas - despesas realizadas + aplicações (resgates/transferências)
         const saldoFinalRealizado = arredondar(
-          saldoInicialRealizado + totalReceitasRealizadas - totalDespesasRealizadas + aplicacoesRealizadas
+          saldoInicialRealizado + totalReceitasRealizadas - totalDespesasRealizadas + aplicacoesRealizadas,
         );
 
         const resumoCalculado: RelatorioSaldoDiario['resumo'] = {
