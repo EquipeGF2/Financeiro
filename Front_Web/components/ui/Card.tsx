@@ -10,7 +10,7 @@ export interface CardProps {
   subtitle?: React.ReactNode;
   headerAction?: React.ReactNode;
   footer?: React.ReactNode;
-  variant?: 'default' | 'primary' | 'danger' | 'success';
+  variant?: 'default' | 'primary' | 'danger' | 'success' | 'warning';
   padding?: 'none' | 'sm' | 'md' | 'lg';
   children: React.ReactNode;
   className?: string;
@@ -36,6 +36,7 @@ export const Card: React.FC<CardProps> = ({
     primary: 'border-primary-200 border-l-4 border-l-primary-600',
     danger: 'border-error-200 border-l-4 border-l-error-600',
     success: 'border-success-200 border-l-4 border-l-success-600',
+    warning: 'border-warning-200 border-l-4 border-l-warning-600',
   };
 
   const paddingStyles = {

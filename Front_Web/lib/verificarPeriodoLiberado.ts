@@ -65,6 +65,12 @@ export async function temLancamentosNaData(
  */
 export type Modulo = 'saldo_diario' | 'previsao_semanal' | 'cobranca';
 
+const fallbackPorModulo: Record<Modulo, { tipo: 'uteis' | 'corridos'; dias: number }> = {
+  saldo_diario: { tipo: 'uteis', dias: 4 },
+  previsao_semanal: { tipo: 'uteis', dias: 4 },
+  cobranca: { tipo: 'corridos', dias: 7 },
+};
+
 /**
  * Verifica se a data está liberada manualmente na tabela de períodos
  * para o módulo específico
@@ -111,6 +117,17 @@ export function dataEstaNosUltimosDiasUteis(
   });
 }
 
+function dataEstaDentroDosUltimosDiasCorridos(data: string, quantidadeDias: number): boolean {
+  const dataAlvo = parseISODate(data);
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+
+  const limite = new Date(hoje);
+  limite.setDate(limite.getDate() - quantidadeDias);
+
+  return dataAlvo >= limite && dataAlvo <= hoje;
+}
+
 /**
  * Verifica se uma data está liberada para edição em um módulo específico
  *
@@ -130,8 +147,19 @@ export async function dataLiberadaParaEdicao(
 ): Promise<{
   liberada: boolean;
   motivo: string;
-}> {
+  }> {
   try {
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    const dataReferencia = parseISODate(data);
+
+    if (dataReferencia > hoje) {
+      return {
+        liberada: false,
+        motivo: 'Não é possível lançar em datas futuras.',
+      };
+    }
+
     // 1. Verifica se foi liberada manualmente (prioridade máxima)
     const liberadaManual = await dataLiberadaManualmente(supabase, data, modulo);
     if (liberadaManual) {
@@ -141,15 +169,21 @@ export async function dataLiberadaParaEdicao(
       };
     }
 
-    // 2. Verifica se está nos últimos 4 dias úteis
-    const nosUltimosDias = dataEstaNosUltimosDiasUteis(data, 4);
+    const fallback = fallbackPorModulo[modulo] ?? fallbackPorModulo.saldo_diario;
+    const nosUltimosDias =
+      fallback.tipo === 'uteis'
+        ? dataEstaNosUltimosDiasUteis(data, fallback.dias)
+        : dataEstaDentroDosUltimosDiasCorridos(data, fallback.dias);
 
     if (nosUltimosDias) {
-      // Se está nos últimos 4 dias úteis, SEMPRE permite edição
-      // (mesmo que já tenha lançamentos - permite adicionar mais lançamentos)
+      const periodoLabel =
+        fallback.tipo === 'uteis'
+          ? `${fallback.dias} dias úteis`
+          : `${fallback.dias} dias corridos`;
+
       return {
         liberada: true,
-        motivo: 'Data está nos últimos 4 dias úteis',
+        motivo: `Data está dentro da regra padrão de ${periodoLabel}.`,
       };
     }
 

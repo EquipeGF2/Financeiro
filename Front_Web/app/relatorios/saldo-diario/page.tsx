@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -279,6 +280,7 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
   const [emailMensagem, setEmailMensagem] = useState('');
   const [enviandoEmail, setEnviandoEmail] = useState(false);
   const [feedbackEmail, setFeedbackEmail] = useState<string | null>(null);
+  const [alertaAuditoria, setAlertaAuditoria] = useState<string | null>(null);
 
   const carregarUsuario = useCallback(async () => {
     try {
@@ -314,6 +316,67 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
   useEffect(() => {
     carregarUsuario();
   }, [carregarUsuario]);
+
+  const registrarSaldoDiario = useCallback(
+    async (
+      supabase: SupabaseClient<any, any, any>,
+      usuarioAtual: UsuarioRow,
+      data: string,
+      resumo: RelatorioSaldoDiario['resumo'],
+    ) => {
+      try {
+        const { data: registroExistente, error: erroBuscaAtual } = await supabase
+          .from('sdd_saldo_diario')
+          .select('sdd_id, sdd_criado_em')
+          .eq('sdd_data', data)
+          .maybeSingle();
+
+        if (erroBuscaAtual) throw erroBuscaAtual;
+
+        const { data: registroAnterior, error: erroBuscaAnterior } = await supabase
+          .from('sdd_saldo_diario')
+          .select('sdd_saldo_final')
+          .lt('sdd_data', data)
+          .order('sdd_data', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (erroBuscaAnterior) throw erroBuscaAnterior;
+
+        const saldoInicialDia =
+          registroAnterior?.sdd_saldo_final !== undefined && registroAnterior?.sdd_saldo_final !== null
+            ? Number(registroAnterior.sdd_saldo_final)
+            : resumo.saldoInicialRealizado;
+
+        const { error: erroUpsert } = await supabase
+          .from('sdd_saldo_diario')
+          .upsert(
+            {
+              sdd_data: data,
+              sdd_saldo_inicial: saldoInicialDia,
+              sdd_saldo_final: resumo.saldoFinalRealizado,
+              sdd_descricao: 'Inclusão por cálculo',
+              sdd_observacao: null,
+              sdd_usr_id: usuarioAtual.usr_id,
+              ...(registroExistente?.sdd_criado_em
+                ? { sdd_criado_em: registroExistente.sdd_criado_em }
+                : {}),
+            },
+            { onConflict: 'sdd_data' },
+          );
+
+        if (erroUpsert) throw erroUpsert;
+
+        setAlertaAuditoria(null);
+      } catch (error) {
+        console.error('Erro ao registrar saldo diário para auditoria:', error);
+        setAlertaAuditoria(
+          'Não foi possível registrar a auditoria do saldo diário. Os valores exibidos permanecem disponíveis.',
+        );
+      }
+    },
+    [],
+  );
 
   const carregarRelatorio = useCallback(
     async (usuarioAtual: UsuarioRow, data: string) => {
@@ -524,26 +587,30 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
           saldoInicialRealizado + totalReceitasRealizadas - totalDespesasRealizadas + aplicacoesRealizadas
         );
 
+        const resumoCalculado: RelatorioSaldoDiario['resumo'] = {
+          saldoInicialPrevisto: arredondar(saldoInicialPrevisto),
+          saldoInicialRealizado,
+          totalReceitasPrevistas,
+          totalReceitasRealizadas,
+          totalDespesasPrevistas,
+          totalDespesasRealizadas,
+          resultadoPrevisto,
+          resultadoRealizado,
+          saldoFinalPrevisto,
+          saldoFinalRealizado,
+          bancosPrevistos: totalBancosPrevistos,
+          bancosRealizados: totalBancosRealizados,
+          aplicacoesRealizadas: arredondar(aplicacoesRealizadas),
+        };
+
+        await registrarSaldoDiario(supabase, usuarioAtual, data, resumoCalculado);
+
         setRelatorio({
           data,
           gastos,
           receitas: receitasComparativo,
           bancos,
-          resumo: {
-            saldoInicialPrevisto: arredondar(saldoInicialPrevisto),
-            saldoInicialRealizado,
-            totalReceitasPrevistas,
-            totalReceitasRealizadas,
-            totalDespesasPrevistas,
-            totalDespesasRealizadas,
-            resultadoPrevisto,
-            resultadoRealizado,
-            saldoFinalPrevisto,
-            saldoFinalRealizado,
-            bancosPrevistos: totalBancosPrevistos,
-            bancosRealizados: totalBancosRealizados,
-            aplicacoesRealizadas: arredondar(aplicacoesRealizadas),
-          },
+          resumo: resumoCalculado,
         });
         setErro(null);
       } catch (error) {
@@ -559,7 +626,7 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
         setCarregandoDados(false);
       }
     },
-    [],
+    [registrarSaldoDiario],
   );
 
   useEffect(() => {
@@ -1049,6 +1116,12 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
         {erro && (
           <Card variant="danger" title="Não foi possível carregar o relatório">
             <p className="text-sm text-error-700">{erro}</p>
+          </Card>
+        )}
+
+        {alertaAuditoria && !erro && (
+          <Card variant="warning" title="Auditoria não registrada">
+            <p className="text-sm text-warning-800">{alertaAuditoria}</p>
           </Card>
         )}
 

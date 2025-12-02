@@ -198,8 +198,9 @@ const arredondar = (valor: number): number => Math.round(valor * 100) / 100;
 
 export default function LancamentoCobrancaPage() {
   const [hojeIso] = useState(() => toISODate(new Date()));
-  const limiteRetroativo = useMemo(() => calcularRetroativo(7), []);
-  const [periodoLiberado, setPeriodoLiberado] = useState(true); // Assume liberado inicialmente
+  const limiteRetroativoPadrao = useMemo(() => calcularRetroativo(7), []);
+  const [periodoLiberado, setPeriodoLiberado] = useState(false);
+  const [motivoPeriodo, setMotivoPeriodo] = useState<string>('Validando período permitido...');
 
   const [usuario, setUsuario] = useState<UsuarioRow | null>(null);
   const [carregando, setCarregando] = useState(true);
@@ -220,7 +221,7 @@ export default function LancamentoCobrancaPage() {
   const [itensMarcadosExclusao, setItensMarcadosExclusao] = useState<Set<string>>(new Set());
   const [mostrarModalExclusao, setMostrarModalExclusao] = useState(false);
 
-  const podeEditar = (dataReferencia >= limiteRetroativo && dataReferencia <= hojeIso) || periodoLiberado;
+  const podeEditar = periodoLiberado;
 
   const contasMap = useMemo(() => {
     const mapa = new Map<number, ContaOption>();
@@ -792,12 +793,13 @@ export default function LancamentoCobrancaPage() {
 
       try {
         const supabase = getSupabaseClient();
-        const { liberada } = await dataLiberadaParaEdicao(supabase, dataReferencia, 'cobranca');
+        const { liberada, motivo } = await dataLiberadaParaEdicao(supabase, dataReferencia, 'cobranca');
         setPeriodoLiberado(liberada);
+        setMotivoPeriodo(motivo);
       } catch (error) {
         console.error('Erro ao verificar período liberado:', error);
-        // Em caso de erro, mantém o comportamento padrão (últimos 7 dias)
         setPeriodoLiberado(false);
+        setMotivoPeriodo('Não foi possível validar o período selecionado. Tente novamente.');
       }
     };
 
@@ -880,7 +882,7 @@ export default function LancamentoCobrancaPage() {
     if (!podeEditar) {
       setMensagem({
         tipo: 'erro',
-        texto: 'A edição está liberada apenas para lançamentos de até 7 dias anteriores ao dia atual.',
+        texto: motivoPeriodo || 'A edição não está liberada para a data selecionada.',
       });
       return;
     }
@@ -1138,7 +1140,6 @@ export default function LancamentoCobrancaPage() {
                 <input
                   type="date"
                   className="mt-1 w-full max-w-xs rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                  min={limiteRetroativo}
                   max={hojeIso}
                   value={dataReferencia}
                   onKeyDown={(e) => {
@@ -1156,16 +1157,16 @@ export default function LancamentoCobrancaPage() {
               </label>
               {!podeEditar && (
                 <div className="rounded-md border border-warning-200 bg-warning-50 px-3 py-2 text-xs text-warning-800">
-                  Edição disponível apenas para os últimos 7 dias úteis. Ajuste a data para atualizar os valores.
+                  {motivoPeriodo}
                 </div>
               )}
               <div className="rounded-md border border-dashed border-primary-200 bg-primary-50 px-3 py-2 text-xs text-primary-700">
                 <div className="font-medium text-primary-800">Limite de edição</div>
                 <div className="mt-1">
-                  Os lançamentos podem ser criados ou ajustados até 7 dias retroativos em relação a {formatarDataPt(hojeIso)}.
+                  Regra padrão: lançamentos dentro dos últimos 7 dias são permitidos automaticamente.
                 </div>
                 <div className="mt-1">
-                  Intervalo permitido: {formatarDataPt(limiteRetroativo)} até {formatarDataPt(hojeIso)}.
+                  Intervalo padrão: {formatarDataPt(limiteRetroativoPadrao)} até {formatarDataPt(hojeIso)}. Datas liberadas manualmente fora desse intervalo também são aceitas.
                 </div>
               </div>
             </div>
