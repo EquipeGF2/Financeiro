@@ -23,7 +23,7 @@ BEGIN
     p_usr_id,
     (SELECT sdd_usr_id FROM financas.sdd_saldo_diario ORDER BY sdd_criado_em DESC LIMIT 1),
     (SELECT sdb_usr_id FROM financas.sdb_saldo_banco ORDER BY sdb_criado_em DESC LIMIT 1),
-    (SELECT usr_id FROM financas.usr_usuarios ORDER BY usr_criado_em DESC LIMIT 1)
+    (SELECT u.usr_id FROM financas.usr_usuarios u ORDER BY usr_criado_em DESC LIMIT 1)
   )
   INTO v_usr_id;
 
