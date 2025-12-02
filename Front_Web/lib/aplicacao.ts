@@ -88,12 +88,17 @@ const extrairRelacao = <T,>(valor: T | T[] | null | undefined): T | null => {
 };
 
 const normalizarNumero = (valor: unknown): number => Number(valor ?? 0);
+const normalizarData = (valor: unknown): string | null => {
+  if (!valor || typeof valor !== 'string') return null;
+  const data = valor.split('T')[0];
+  return /^\d{4}-\d{2}-\d{2}$/.test(data) ? data : null;
+};
 
 export async function carregarExtratoAplicacao(
-  supabase: AnySupabaseClient,
-  inicio: string,
-  fim: string,
-): Promise<ExtratoAplicacao> {
+    supabase: AnySupabaseClient,
+    inicio: string,
+    fim: string,
+  ): Promise<ExtratoAplicacao> {
   if (!inicio || !fim) {
     throw new Error('Período inválido para consultar o saldo de aplicação.');
   }
@@ -117,18 +122,20 @@ export async function carregarExtratoAplicacao(
   const valorSaldoInicialBase = normalizarNumero(registroSaldo?.pvi_valor);
 
   // 2) Buscar movimentos de aplicação e resgate a partir da data base até o fim do período solicitado
-  const [pagamentosRes, receitasRes] = await Promise.all([
-    supabase
-      .from('pag_pagamentos_area')
-      .select('pag_data, pag_valor, are_areas(are_nome)')
-      .gte('pag_data', dataBase)
-      .lte('pag_data', fim),
-    supabase
-      .from('rec_receitas')
-      .select('rec_data, rec_valor, ctr_contas_receita(ctr_nome)')
-      .gte('rec_data', dataBase)
-      .lte('rec_data', fim),
-  ]);
+    const [pagamentosRes, receitasRes] = await Promise.all([
+      supabase
+        .from('pag_pagamentos_area')
+        .select('pag_data, pag_valor, are_areas(are_nome)')
+        .gte('pag_data', dataBase)
+        .lte('pag_data', fim)
+        .order('pag_data', { ascending: true }),
+      supabase
+        .from('rec_receitas')
+        .select('rec_data, rec_valor, ctr_contas_receita(ctr_nome)')
+        .gte('rec_data', dataBase)
+        .lte('rec_data', fim)
+        .order('rec_data', { ascending: true }),
+    ]);
 
   if (pagamentosRes.error) throw pagamentosRes.error;
   if (receitasRes.error) throw receitasRes.error;
@@ -139,6 +146,9 @@ export async function carregarExtratoAplicacao(
   const movimentos: MovimentoAplicacao[] = [];
 
   pagamentos.forEach((pagamento) => {
+    const dataMovimento = normalizarData(pagamento.pag_data);
+    if (!dataMovimento) return;
+
     const rel = extrairRelacao(pagamento.are_areas);
     const nomeArea = rel?.are_nome ?? 'Aplicação';
     if (!ehMovimentacaoAplicacao(nomeArea)) return;
@@ -150,7 +160,7 @@ export async function carregarExtratoAplicacao(
     const isTransferencia = ehTransferencia(nomeArea);
 
     movimentos.push({
-      data: pagamento.pag_data,
+      data: dataMovimento,
       tipo: isResgate ? 'resgate' : 'aplicacao',
       valor: valor,
       descricao: isResgate
@@ -163,6 +173,9 @@ export async function carregarExtratoAplicacao(
   });
 
   receitas.forEach((receita) => {
+    const dataMovimento = normalizarData(receita.rec_data);
+    if (!dataMovimento) return;
+
     const rel = extrairRelacao(receita.ctr_contas_receita);
     const nomeConta = rel?.ctr_nome ?? 'Receita aplicação';
     if (!ehMovimentacaoAplicacao(nomeConta)) return;
@@ -171,7 +184,7 @@ export async function carregarExtratoAplicacao(
     if (valor === 0) return;
 
     movimentos.push({
-      data: receita.rec_data,
+      data: dataMovimento,
       tipo: 'resgate',
       valor,
       descricao: nomeConta,

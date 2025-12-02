@@ -34,7 +34,12 @@ const AplicacaoRelatorioPage: React.FC = () => {
 
   useEffect(() => {
     const carregar = async () => {
-      if (!inicio || !fim) return;
+      if (!inicio || !fim) {
+        setErro('Informe um período válido para carregar o saldo de aplicação.');
+        setExtrato(null);
+        setCarregando(false);
+        return;
+      }
       try {
         setCarregando(true);
         setErro(null);
