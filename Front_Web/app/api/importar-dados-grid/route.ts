@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseServer, getOrCreateUser } from '@/lib/supabaseClient';
+import { isAdminUserName } from '@/lib/userSession';
 
 type LinhaImportacao = {
   data: string;
@@ -106,9 +107,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (userName?.toUpperCase() !== 'GENARO') {
+    if (!isAdminUserName(userName)) {
       return NextResponse.json(
-        { error: 'Apenas o usuário Genaro tem permissão' },
+        { error: 'Apenas os usuários Genaro e Angelo têm permissão' },
         { status: 403 }
       );
     }

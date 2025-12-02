@@ -7,7 +7,7 @@ import { Header } from '@/components/layout';
 import { Button, Card } from '@/components/ui';
 import { ConfirmModal } from '@/components/ui/Modal';
 import Toast from '@/components/ui/Toast';
-import { getUserSession } from '@/lib/userSession';
+import { getUserSession, isAdminUserName } from '@/lib/userSession';
 
 type LinhaPlanilha = Record<string, string | number | undefined>;
 
@@ -77,6 +77,7 @@ const sugerirColuna = (colunas: string[], termos: string[]): string => {
 
 export default function ImportarSaldoDiarioPage() {
   const session = getUserSession();
+  const isAdmin = isAdminUserName(session.userName);
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [colunasDisponiveis, setColunasDisponiveis] = useState<string[]>([]);
   const [linhasBrutas, setLinhasBrutas] = useState<LinhaPlanilha[]>([]);
@@ -180,8 +181,8 @@ export default function ImportarSaldoDiarioPage() {
   };
 
   const handleImportar = async () => {
-    if (session.userName?.toUpperCase() !== 'GENARO') {
-      setToast({ message: 'Apenas o usuário Genaro pode importar saldos diários.', type: 'error' });
+    if (!isAdmin) {
+      setToast({ message: 'Apenas os usuários Genaro e Angelo podem importar saldos diários.', type: 'error' });
       return;
     }
 
@@ -244,10 +245,10 @@ export default function ImportarSaldoDiarioPage() {
       />
 
       <div className="page-content space-y-6">
-        {session.userName?.toUpperCase() !== 'GENARO' && (
+        {!isAdmin && (
           <Card title="⚠️ Permissão Necessária" variant="danger">
             <p className="text-error-700">
-              Apenas o usuário <strong>Genaro</strong> pode importar saldos diários.
+              Apenas os usuários <strong>Genaro</strong> e <strong>Angelo</strong> podem importar saldos diários.
             </p>
           </Card>
         )}
@@ -264,7 +265,7 @@ export default function ImportarSaldoDiarioPage() {
                 type="file"
                 accept=".xlsx,.xls,.csv"
                 onChange={handleArquivoSelecionado}
-                disabled={processando || session.userName?.toUpperCase() !== 'GENARO'}
+                disabled={processando || !isAdmin}
                 className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 cursor-pointer disabled:opacity-50"
               />
             </div>
@@ -397,7 +398,7 @@ export default function ImportarSaldoDiarioPage() {
             <div className="mt-4 flex gap-3">
               <Button
                 variant="primary"
-                disabled={importando || linhasValidas.length === 0 || session.userName?.toUpperCase() !== 'GENARO'}
+                disabled={importando || linhasValidas.length === 0 || !isAdmin}
                 loading={importando}
                 onClick={handleImportar}
               >

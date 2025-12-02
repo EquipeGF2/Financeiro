@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { getSupabaseServer, getOrCreateUser } from '@/lib/supabaseClient';
+import { isAdminUserName } from '@/lib/userSession';
 
 // Mapeamento de áreas para IDs do banco
 const AREAS_MAP: Record<string, number> = {
@@ -176,10 +177,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verifica se o usuário é Genaro
-    if (userName?.toUpperCase() !== 'GENARO') {
+    if (!isAdminUserName(userName)) {
       return NextResponse.json(
-        { error: 'Apenas o usuário Genaro tem permissão para importar dados' },
+        { error: 'Apenas os usuários Genaro e Angelo têm permissão para importar dados' },
         { status: 403 }
       );
     }
