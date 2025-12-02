@@ -78,11 +78,6 @@ const AuditoriaSaldosDiariosPage: React.FC = () => {
         setErro(null);
         const supabase = getSupabaseClient();
 
-        // Buscar saldo diário de um dia antes para usar como saldo inicial
-        const dataObj = new Date(inicio + 'T00:00:00');
-        dataObj.setDate(dataObj.getDate() - 1);
-        const diaAnterior = dataObj.toISOString().split('T')[0];
-
         // Buscar todos os dados necessários
         const [saldosBancosRes, saldosDiariosRes, receitasRes, pagamentosAreaRes, pagamentosBancoRes] = await Promise.all([
           supabase
@@ -94,7 +89,7 @@ const AuditoriaSaldosDiariosPage: React.FC = () => {
           supabase
             .from('sdd_saldo_diario')
             .select('sdd_data, sdd_saldo_inicial, sdd_saldo_final')
-            .gte('sdd_data', diaAnterior)
+            .gte('sdd_data', inicio)
             .lte('sdd_data', fim)
             .order('sdd_data', { ascending: true }),
           supabase
@@ -144,11 +139,9 @@ const AuditoriaSaldosDiariosPage: React.FC = () => {
           mapaBancos.set(nomeBanco, Number(item.sdb_saldo ?? 0));
         });
 
-        // Criar mapas de saldo inicial e final registrados
-        const mapaSaldosIniciais = new Map<string, number>();
+        // Criar mapa de saldo final registrado
         const mapaSaldosFinais = new Map<string, number>();
         saldosDiarios.forEach((item: any) => {
-          mapaSaldosIniciais.set(item.sdd_data, Number(item.sdd_saldo_inicial ?? 0));
           mapaSaldosFinais.set(item.sdd_data, Number(item.sdd_saldo_final ?? 0));
         });
 
@@ -190,30 +183,11 @@ const AuditoriaSaldosDiariosPage: React.FC = () => {
         // Gerar linhas de auditoria
         const datas = gerarIntervaloDatas(inicio, fim);
         const linhasCalculadas: AuditoriaLinha[] = [];
-        let saldoFinalAnterior = mapaSaldosFinais.get(diaAnterior) ?? 0;
 
         datas.forEach((data) => {
           const saldosBancosDia = mapaSaldosBancosPorData.get(data);
 
-          // Calcular saldo final do dia
-          const saldoFinalRegistrado = mapaSaldosFinais.get(data);
-          let saldoFinalDia =
-            saldoFinalRegistrado === undefined || saldoFinalRegistrado === null
-              ? undefined
-              : Number(saldoFinalRegistrado);
-
-          // Se não houver saldo final registrado, calcular
-          if (saldoFinalDia === undefined) {
-            const saldoInicial = mapaSaldosIniciais.get(data) ?? saldoFinalAnterior;
-            const receitas = mapaReceitasPorData.get(data) ?? 0;
-            const pagArea = mapaPagamentosAreaPorData.get(data) ?? 0;
-            const pagBanco = mapaPagamentosBancoPorData.get(data) ?? 0;
-            const aplicacoes = mapaAplicacoesPorData.get(data) ?? 0;
-
-            saldoFinalDia = saldoInicial + receitas - pagArea - pagBanco + aplicacoes;
-          }
-
-          saldoFinalAnterior = saldoFinalDia;
+          const saldoFinalDia = Number(mapaSaldosFinais.get(data) ?? 0);
 
           const saldosPorBanco: Record<string, number> = {};
           let totalSaldosBancos = 0;
