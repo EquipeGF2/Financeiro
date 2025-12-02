@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { Header } from '@/components/layout';
 import { Button, Card } from '@/components/ui';
-import { getUserSession } from '@/lib/userSession';
+import { getUserSession, isAdminUserName } from '@/lib/userSession';
 
 type ResultadoImportacao = {
   success: boolean;
@@ -20,6 +20,7 @@ export default function ImportarHistoricoPage() {
   const [importando, setImportando] = useState(false);
   const [resultado, setResultado] = useState<ResultadoImportacao | null>(null);
   const session = getUserSession();
+  const isAdmin = isAdminUserName(session.userName);
 
   const handleArquivoSelecionado = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -87,11 +88,11 @@ export default function ImportarHistoricoPage() {
 
       <div className="page-content space-y-6">
         {/* Aviso de Permissão */}
-        {session.userName?.toUpperCase() !== 'GENARO' && (
+        {!isAdmin && (
           <Card title="⚠️ Permissão Necessária" variant="danger">
             <div className="text-error-700">
               <p className="font-semibold">Acesso restrito!</p>
-              <p className="mt-2">Apenas o usuário <strong>Genaro</strong> tem permissão para importar dados históricos.</p>
+              <p className="mt-2">Apenas os usuários <strong>Genaro</strong> e <strong>Angelo</strong> têm permissão para importar dados históricos.</p>
               <p className="mt-2 text-sm">Usuário atual: <strong>{session.displayName}</strong></p>
             </div>
           </Card>
@@ -173,7 +174,7 @@ export default function ImportarHistoricoPage() {
               <Button
                 variant="primary"
                 onClick={handleImportar}
-                disabled={!arquivo || importando || session.userName?.toUpperCase() !== 'GENARO'}
+                disabled={!arquivo || importando || !isAdmin}
                 loading={importando}
               >
                 {importando ? 'Importando...' : 'Importar Dados'}

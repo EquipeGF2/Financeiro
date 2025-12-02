@@ -73,6 +73,20 @@ const RelatoriosHomePage: React.FC = () => {
               </Link>
             </div>
           </Card>
+          <Card
+            title="Auditoria de Receitas"
+            subtitle="Verifique se o total diário lançado na cobrança confere com as receitas registradas no saldo diário."
+            variant="danger"
+          >
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Identifique rapidamente divergências entre os valores consolidados na área de cobrança e os lançamentos de receita do saldo diário.
+              </p>
+              <Link href="/auditoria/receitas" className="inline-block">
+                <Button variant="primary">Abrir auditoria</Button>
+              </Link>
+            </div>
+          </Card>
         </div>
       </div>
     </>

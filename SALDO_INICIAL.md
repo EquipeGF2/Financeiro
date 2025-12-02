@@ -28,12 +28,14 @@ INSERT INTO financas.pvi_previsao_itens (
   pvi_data,
   pvi_tipo,
   pvi_valor,
+  pvi_categoria,
   pvi_usr_id
 ) VALUES (
-  '2025-01-01',           -- Data do primeiro dia útil
-  'saldo_inicial',        -- Tipo do registro
-  100000.00,              -- Valor do saldo inicial consolidado
-  'uuid-do-usuario'       -- ID do usuário responsável
+  '2025-01-01',                 -- Data do primeiro dia útil
+  'saldo_inicial',              -- Tipo do registro (valores permitidos: receita, gasto, saldo_inicial, saldo_diario, saldo_acumulado)
+  100000.00,                    -- Valor do saldo inicial consolidado
+  'Saldo inicial consolidado',  -- Texto livre sobre a natureza do registro
+  'uuid-do-usuario'             -- ID do usuário responsável
 );
 ```
 
@@ -90,21 +92,25 @@ O sistema controla aplicações através de áreas específicas cadastradas na t
 ### Registro do Saldo Inicial de Aplicação
 
 ```sql
--- Registrar saldo inicial de aplicação
+-- Registrar saldo inicial de aplicação (usa o tipo já existente: saldo_inicial)
 INSERT INTO financas.pvi_previsao_itens (
   pvi_data,
   pvi_tipo,
   pvi_valor,
-  pvi_descricao,
+  pvi_categoria,
+  pvi_observacao,
   pvi_usr_id
 ) VALUES (
   '2025-01-01',
-  'saldo_aplicacao',
+  'saldo_inicial',                      -- Valores permitidos no CHECK de pvi_tipo
   50000.00,
-  'Saldo inicial em aplicações financeiras',
+  'Saldo inicial da aplicação',         -- Categoria para identificar que o valor é da aplicação
+  'Lançamento inicial da carteira de aplicação',
   'uuid-do-usuario'
 );
 ```
+
+> ⚠️ O campo `pvi_tipo` aceita apenas `receita`, `gasto`, `saldo_inicial`, `saldo_diario` e `saldo_acumulado`. Usar `saldo_inicial` com uma categoria/observação específica evita erros como “column \"pvi_descricao\" does not exist” e garante compatibilidade com o esquema atual.
 
 ### Cálculo Automático
 
@@ -133,11 +139,12 @@ Antes de importar dados históricos, **obrigatoriamente** registre o saldo inici
 
 ```sql
 INSERT INTO financas.pvi_previsao_itens (
-  pvi_data, pvi_tipo, pvi_valor, pvi_usr_id
+  pvi_data, pvi_tipo, pvi_valor, pvi_categoria, pvi_usr_id
 ) VALUES (
   '2024-12-31',            -- Último dia do período anterior
-  'saldo_inicial',
+  'saldo_inicial',         -- Tipo permitido pelo CHECK de pvi_tipo
   150000.00,               -- Saldo consolidado de todos os bancos
+  'Saldo inicial consolidado',
   'uuid-do-usuario'
 );
 ```
@@ -242,7 +249,7 @@ Sim, mas recomenda-se ter apenas um por data. Se houver múltiplos, o sistema us
 
 ### 4. Como registrar saldo de aplicação no primeiro dia?
 
-Use um INSERT separado com `pvi_tipo = 'saldo_aplicacao'` e o valor inicial em aplicações.
+Use um INSERT com `pvi_tipo = 'saldo_inicial'` e diferencie pelo `pvi_categoria`/`pvi_observacao` para indicar que se refere à aplicação, por exemplo `pvi_categoria = 'Saldo inicial da aplicação'`.
 
 ---
 
@@ -257,5 +264,5 @@ Para dúvidas ou problemas:
 
 ---
 
-**Última atualização**: 12/11/2025
-**Versão do documento**: 1.0
+**Última atualização**: 13/11/2025
+**Versão do documento**: 1.1

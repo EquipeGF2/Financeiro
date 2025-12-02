@@ -5,9 +5,11 @@
 
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+
+import { getUserSession, hasActiveSession, isAdminUserName } from '@/lib/userSession';
 
 interface NavItem {
   label: string;
@@ -199,6 +201,20 @@ const navigationSections: NavSection[] = [
           </svg>
         ),
       },
+      {
+        label: 'Receitas',
+        href: '/auditoria/receitas',
+        icon: (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+            />
+          </svg>
+        ),
+      },
     ],
   },
   {
@@ -344,6 +360,17 @@ const navigationSections: NavSection[] = [
 
 export const Sidebar: React.FC = () => {
   const pathname = usePathname();
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    if (!hasActiveSession()) {
+      setIsAdmin(false);
+      return;
+    }
+
+    const session = getUserSession();
+    setIsAdmin(isAdminUserName(session.userName));
+  }, []);
 
   const isActive = (href: string) => {
     if (href === '/') return pathname === href;
@@ -384,35 +411,37 @@ export const Sidebar: React.FC = () => {
       {/* Navigation */}
       <div className="sidebar__scroll">
         <nav className="p-4 space-y-4 pb-6">
-          {navigationSections.map((section) => (
-            <div key={section.title} className={`rounded-lg border p-3 ${getSectionColorClasses()}`}>
-              <h3 className={`px-2 text-xs font-bold uppercase tracking-wider mb-2 ${getTitleColorClass()}`}>
-                {section.title}
-              </h3>
-              <ul className="space-y-1">
-                {section.items.map((item) => (
-                  <li key={item.href}>
-                    <Link
-                      href={item.href}
-                      className={`
-                        flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium
-                        transition-colors duration-150
-                        ${getItemColorClass(isActive(item.href))}
-                      `}
-                    >
-                      {item.icon}
-                      <span>{item.label}</span>
-                      {item.badge && (
-                        <span className="ml-auto inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 text-primary-800">
-                          {item.badge}
-                        </span>
-                      )}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+          {navigationSections
+            .filter((section) => section.title !== 'Administração' || isAdmin)
+            .map((section) => (
+              <div key={section.title} className={`rounded-lg border p-3 ${getSectionColorClasses()}`}>
+                <h3 className={`px-2 text-xs font-bold uppercase tracking-wider mb-2 ${getTitleColorClass()}`}>
+                  {section.title}
+                </h3>
+                <ul className="space-y-1">
+                  {section.items.map((item) => (
+                    <li key={item.href}>
+                      <Link
+                        href={item.href}
+                        className={`
+                          flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium
+                          transition-colors duration-150
+                          ${getItemColorClass(isActive(item.href))}
+                        `}
+                      >
+                        {item.icon}
+                        <span>{item.label}</span>
+                        {item.badge && (
+                          <span className="ml-auto inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary-100 text-primary-800">
+                            {item.badge}
+                          </span>
+                        )}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
         </nav>
       </div>
 
