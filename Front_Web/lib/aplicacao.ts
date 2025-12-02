@@ -199,7 +199,7 @@ export async function carregarExtratoAplicacao(
   let saldoInicialPeriodo = valorSaldoInicialBase;
 
   movimentosOrdenados.forEach((movimento) => {
-    const ajuste = movimento.tipo === 'resgate' ? movimento.valor : -movimento.valor;
+    const ajuste = movimento.tipo === 'resgate' ? -movimento.valor : movimento.valor;
     if (movimento.data < inicio) {
       saldoAcumulado += ajuste;
       saldoInicialPeriodo = saldoAcumulado;
@@ -212,7 +212,7 @@ export async function carregarExtratoAplicacao(
 
   movimentosOrdenados.forEach((movimento) => {
     if (movimento.data < inicio || movimento.data > fim) return;
-    const ajuste = movimento.tipo === 'resgate' ? movimento.valor : -movimento.valor;
+    const ajuste = movimento.tipo === 'resgate' ? -movimento.valor : movimento.valor;
     saldoAcumulado += ajuste;
     movimentosPeriodo.push({ ...movimento, saldoApos: saldoAcumulado });
   });
@@ -248,12 +248,15 @@ export async function carregarExtratoAplicacao(
       idxMov += 1;
     }
 
-    saldosDiarios.push({
-      data,
-      saldoFinal: saldoPorDia,
-      aplicadoNoDia,
-      resgatadoNoDia,
-    });
+    const temMovimento = aplicadoNoDia !== 0 || resgatadoNoDia !== 0;
+    if (temMovimento) {
+      saldosDiarios.push({
+        data,
+        saldoFinal: saldoPorDia,
+        aplicadoNoDia,
+        resgatadoNoDia,
+      });
+    }
   });
 
   const saldoFinal =
