@@ -68,9 +68,9 @@ BEGIN
     RETURNING xmax = 0 AS inserted
   )
   SELECT
-    COUNT(*) AS processados,
-    COUNT(*) FILTER (WHERE inserted) AS inseridos,
-    COUNT(*) FILTER (WHERE NOT inserted) AS atualizados,
+    COUNT(*)::integer AS processados,
+    COUNT(*) FILTER (WHERE inserted)::integer AS inseridos,
+    COUNT(*) FILTER (WHERE NOT inserted)::integer AS atualizados,
     v_usr_id AS usr_id
   FROM upsert;
 END;
