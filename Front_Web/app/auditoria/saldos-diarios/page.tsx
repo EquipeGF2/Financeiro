@@ -223,8 +223,8 @@ const AuditoriaSaldosDiariosPage: React.FC = () => {
           totalSaldosBancos = Number(totalSaldosBancos.toFixed(2));
           const diferenca = Number((totalSaldosBancos - saldoFinalDia).toFixed(2));
 
-          // Apenas incluir dias com algum dado
-          if (totalSaldosBancos !== 0 || saldoFinalDia !== 0) {
+          // Apenas incluir dias que possuem saldo bancário lançado
+          if (saldosBancosDia?.size) {
             linhasCalculadas.push({
               data,
               saldosPorBanco,
