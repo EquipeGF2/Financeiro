@@ -18,6 +18,8 @@ import { getUserSession } from '@/lib/userSession';
 
 const toISODate = (date: Date): string => date.toISOString().split('T')[0];
 
+const dataISOValida = (valor: string): boolean => /^(\d{4})-(\d{2})-(\d{2})$/.test(valor);
+
 const formatarDataPt = (iso: string): string => {
   if (!iso) return '';
   const [ano, mes, dia] = iso.split('-');
@@ -303,6 +305,9 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
       data: string,
       resumo: RelatorioSaldoDiario['resumo'],
     ) => {
+      if (!dataISOValida(data)) {
+        return;
+      }
       try {
         const { data: registroExistente, error: erroBuscaAtual } = await supabase
           .from('sdd_saldo_diario')
@@ -601,8 +606,6 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
           aplicacoesRealizadas: arredondar(aplicacoesRealizadas),
         };
 
-        await registrarSaldoDiario(supabase, usuarioAtual, data, resumoCalculado);
-
         setRelatorio({
           data,
           gastos,
@@ -611,6 +614,8 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
           resumo: resumoCalculado,
         });
         setErro(null);
+
+        void registrarSaldoDiario(supabase, usuarioAtual, data, resumoCalculado);
       } catch (error) {
         console.error('Erro ao carregar relatório de saldo diário:', error);
         setRelatorio(null);
@@ -629,6 +634,12 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
 
   useEffect(() => {
     if (!usuario) {
+      return;
+    }
+    if (!dataISOValida(dataReferencia)) {
+      setCarregandoDados(false);
+      setRelatorio(null);
+      setErro(dataReferencia ? 'Informe uma data completa (AAAA-MM-DD).' : null);
       return;
     }
     carregarRelatorio(usuario, dataReferencia);
