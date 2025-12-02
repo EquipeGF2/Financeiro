@@ -159,7 +159,7 @@ const AplicacaoRelatorioPage: React.FC = () => {
               <Card
                 title="Extrato da aplicação"
                 subtitle="Lista de lançamentos que alteraram o saldo no período"
-                variant="secondary"
+                variant="default"
               >
                 <div className="overflow-auto">
                   <table className="min-w-full text-sm text-gray-700">
