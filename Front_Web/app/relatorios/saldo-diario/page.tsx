@@ -33,11 +33,9 @@ type PrevisaoRow = {
   pvi_are_id?: unknown;
   pvi_ctr_id?: unknown;
   pvi_ban_id?: unknown;
-  pvi_tpr_id?: unknown;
   are_areas?: MaybeArray<{ are_nome?: unknown } | null>;
   ctr_contas_receita?: MaybeArray<{ ctr_nome?: unknown; ctr_codigo?: unknown } | null>;
   ban_bancos?: MaybeArray<{ ban_nome?: unknown } | null>;
-  tpr_tipos_receita?: MaybeArray<{ tpr_id?: unknown; tpr_nome?: unknown } | null>;
 };
 
 type PagamentoAreaRow = {
@@ -57,8 +55,6 @@ type SaldoBancoRow = {
   sdb_ban_id?: unknown;
   ban_bancos?: MaybeArray<{ ban_nome?: unknown; ban_numero_conta?: unknown } | null>;
 };
-
-type CategoriaReceita = 'depositos' | 'titulos' | 'outras';
 
 type LinhaComparativa = {
   chave: string;
@@ -179,30 +175,13 @@ const obterOrdemArea = (nomeArea: string): number => {
   return 999;
 };
 
-const obterCategoriaReceita = (tprId: number | null | undefined, codigo: string | null | undefined): CategoriaReceita => {
-  // Primeiro tenta usar o tpr_id (mais confiável)
-  if (tprId !== null && tprId !== undefined && Number.isFinite(tprId)) {
-    const tprIdNumero = Number(tprId);
-    if (tprIdNumero === 1) return 'titulos';  // Receitas em Títulos/Boletos
-    if (tprIdNumero === 2) return 'depositos'; // Receitas em Depósitos/PIX
-    if (tprIdNumero === 3) return 'outras';   // Outras Receitas
-  }
-
-  // Fallback: usa o código da conta de receita
-  if (!codigo) {
-    return 'outras';
-  }
-  const normalizado = codigo.trim();
-  if (normalizado.startsWith('200')) return 'titulos';
-  if (normalizado.startsWith('201')) return 'depositos';
-  if (normalizado.startsWith('202')) return 'outras';
-  return 'outras';
-};
-
-const categoriaRotulos: Record<CategoriaReceita, string> = {
-  depositos: 'Receitas - Depósitos e PIX',
-  titulos: 'Receitas - Títulos (Boletos)',
-  outras: 'Receitas - Outras Entradas',
+const montarTituloContaReceita = (
+  contaRel: { ctr_nome?: unknown; ctr_codigo?: unknown } | undefined,
+  fallback: string,
+): string => {
+  const nomeConta = contaRel?.ctr_nome ? toString(contaRel.ctr_nome) : fallback;
+  const codigoConta = contaRel?.ctr_codigo ? toString(contaRel.ctr_codigo) : '';
+  return codigoConta ? `${nomeConta} (${codigoConta})` : nomeConta;
 };
 
 const tabelaAccentClassNames: Record<TabelaAccent, string> = {
@@ -389,7 +368,7 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
           supabase
             .from('pvi_previsao_itens')
             .select(
-              'pvi_tipo, pvi_categoria, pvi_valor, pvi_are_id, pvi_ctr_id, pvi_ban_id, pvi_tpr_id, are_areas(are_nome), ctr_contas_receita(ctr_nome, ctr_codigo), ban_bancos(ban_nome), tpr_tipos_receita(tpr_id, tpr_nome)',
+              'pvi_tipo, pvi_categoria, pvi_valor, pvi_are_id, pvi_ctr_id, pvi_ban_id, are_areas(are_nome), ctr_contas_receita(ctr_nome, ctr_codigo), ban_bancos(ban_nome)',
             )
             .eq('pvi_data', data),
           supabase
@@ -458,12 +437,10 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
           }
 
           if (tipo === 'receita') {
-            const tprId = toNumber((item as PrevisaoRow).pvi_tpr_id, 0) || undefined;
-            const codigo = contaRel?.ctr_codigo ? toString(contaRel.ctr_codigo) : null;
-            const categoria = obterCategoriaReceita(tprId, codigo);
-            const titulo = categoriaRotulos[categoria];
-            const chave = categoria;
-            const existente = mapaReceitas.get(chave) ?? { titulo, previsto: 0, realizado: 0 };
+            const contaId = toString((item as PrevisaoRow).pvi_ctr_id, 'sem-conta');
+            const tituloConta = montarTituloContaReceita(contaRel, 'Conta não informada');
+            const chave = `${contaId}-${tituloConta.toLowerCase()}`;
+            const existente = mapaReceitas.get(chave) ?? { titulo: tituloConta, previsto: 0, realizado: 0 };
             existente.previsto += valor;
             mapaReceitas.set(chave, existente);
 
@@ -539,12 +516,10 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
 
         Array.from(receitasUnicas.values()).forEach((item) => {
           const contaRel = normalizeRelation(item.ctr_contas_receita)[0];
-          const codigo = contaRel?.ctr_codigo ? toString(contaRel.ctr_codigo) : null;
-          // rec_receitas não tem pvi_tpr_id, então usa apenas o código da conta
-          const categoria = obterCategoriaReceita(undefined, codigo);
-          const titulo = categoriaRotulos[categoria];
-          const chave = categoria;
-          const existente = mapaReceitas.get(chave) ?? { titulo, previsto: 0, realizado: 0 };
+          const contaId = toString(item.rec_ctr_id, 'sem-conta');
+          const tituloConta = montarTituloContaReceita(contaRel, 'Conta não informada');
+          const chave = `${contaId}-${tituloConta.toLowerCase()}`;
+          const existente = mapaReceitas.get(chave) ?? { titulo: tituloConta, previsto: 0, realizado: 0 };
           existente.realizado += arredondar(toNumber(item.rec_valor));
           mapaReceitas.set(chave, existente);
         });
