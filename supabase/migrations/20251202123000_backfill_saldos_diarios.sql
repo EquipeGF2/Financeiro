@@ -23,7 +23,7 @@ BEGIN
     p_usr_id,
     (SELECT sdd_usr_id FROM financas.sdd_saldo_diario ORDER BY sdd_criado_em DESC LIMIT 1),
     (SELECT sdb_usr_id FROM financas.sdb_saldo_banco ORDER BY sdb_criado_em DESC LIMIT 1),
-    (SELECT usr_id FROM financas.usr_usuarios ORDER BY usr_criado_em DESC LIMIT 1)
+    (SELECT u.usr_id FROM financas.usr_usuarios u ORDER BY usr_criado_em DESC LIMIT 1)
   )
   INTO v_usr_id;
 
@@ -33,10 +33,9 @@ BEGIN
 
   RETURN QUERY WITH totais AS (
     SELECT
-      sdb_data AS data_referencia,
-      ROUND(SUM(sdb_saldo)::numeric, 2) AS saldo_final
-    FROM financas.sdb_saldo_banco
-    GROUP BY sdb_data
+      sdd_data AS data_referencia,
+      sdd_saldo_final AS saldo_final
+    FROM financas.sdd_saldo_diario
   ), calculado AS (
     SELECT
       data_referencia,
@@ -68,9 +67,9 @@ BEGIN
     RETURNING xmax = 0 AS inserted
   )
   SELECT
-    COUNT(*) AS processados,
-    COUNT(*) FILTER (WHERE inserted) AS inseridos,
-    COUNT(*) FILTER (WHERE NOT inserted) AS atualizados,
+    COUNT(*)::integer AS processados,
+    COUNT(*) FILTER (WHERE inserted)::integer AS inseridos,
+    COUNT(*) FILTER (WHERE NOT inserted)::integer AS atualizados,
     v_usr_id AS usr_id
   FROM upsert;
 END;
