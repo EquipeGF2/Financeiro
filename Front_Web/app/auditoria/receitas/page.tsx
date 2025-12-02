@@ -87,20 +87,27 @@ const AuditoriaReceitasPage: React.FC = () => {
         });
 
         const datas = gerarIntervaloDatas(inicio, fim);
-        const linhasCalculadas = datas.map((data) => {
-          const totalCobranca = Number(mapaCobranca.get(data) ?? 0);
-          const totalSaldo = Number(mapaSaldoDiario.get(data) ?? 0);
-          const diferenca = totalCobranca - totalSaldo;
+        const linhasCalculadas = datas
+          .map((data) => {
+            const temCobranca = mapaCobranca.has(data);
+            const temSaldo = mapaSaldoDiario.has(data);
 
-          return {
-            data,
-            totalCobranca,
-            totalSaldoDiario: totalSaldo,
-            diferenca,
-          } satisfies LinhaAuditoria;
-        });
+            if (!temCobranca && !temSaldo) return null;
 
-        setLinhas(linhasCalculadas);
+            const totalCobranca = Number(mapaCobranca.get(data) ?? 0);
+            const totalSaldo = Number(mapaSaldoDiario.get(data) ?? 0);
+            const diferenca = Number((totalCobranca - totalSaldo).toFixed(2));
+
+            return {
+              data,
+              totalCobranca,
+              totalSaldoDiario: totalSaldo,
+              diferenca,
+            } satisfies LinhaAuditoria;
+          })
+          .filter(Boolean) as LinhaAuditoria[];
+
+        setLinhas(linhasCalculadas.reverse());
       } catch (err: any) {
         console.error('Erro ao carregar auditoria de receitas:', err);
         setErro('Não foi possível carregar os dados de auditoria no momento.');
@@ -117,141 +124,190 @@ const AuditoriaReceitasPage: React.FC = () => {
     carregarAuditoria(periodoInicio, fim);
   }, [carregarAuditoria, periodoFim, periodoInicio]);
 
-  const totalDivergencias = useMemo(
-    () => linhas.filter((linha) => Math.abs(linha.diferenca) > 0.009).length,
-    [linhas]
+  const intervaloDatas = useMemo(
+    () => gerarIntervaloDatas(periodoInicio, periodoFim || periodoInicio),
+    [periodoFim, periodoInicio]
   );
 
-  const somaTotaisCobranca = useMemo(
-    () => linhas.reduce((acc, linha) => acc + linha.totalCobranca, 0),
-    [linhas]
-  );
+  const totaisResumo = useMemo(() => {
+    if (!linhas.length) {
+      return {
+        diasComDado: 0,
+        divergencias: 0,
+        maiorDiferenca: 0,
+        totalCobranca: 0,
+        totalSaldoDiario: 0,
+      };
+    }
 
-  const somaTotaisSaldo = useMemo(
-    () => linhas.reduce((acc, linha) => acc + linha.totalSaldoDiario, 0),
-    [linhas]
-  );
+    const divergencias = linhas.filter((linha) => Math.abs(linha.diferenca) > 0.009);
+    const maiorDiferenca = divergencias.reduce(
+      (acumulado, linha) =>
+        Math.abs(linha.diferenca) > Math.abs(acumulado) ? linha.diferenca : acumulado,
+      0
+    );
+
+    const totalCobranca = linhas.reduce((acc, linha) => acc + linha.totalCobranca, 0);
+    const totalSaldoDiario = linhas.reduce((acc, linha) => acc + linha.totalSaldoDiario, 0);
+
+    return {
+      diasComDado: linhas.length,
+      divergencias: divergencias.length,
+      maiorDiferenca,
+      totalCobranca,
+      totalSaldoDiario,
+    };
+  }, [linhas]);
 
   return (
     <>
       <Header
         title="Auditoria de Receitas"
-        description="Compare o total diário lançado na cobrança com as receitas registradas no saldo diário para identificar divergências."
-      />
-
-      <div className="space-y-4">
-        <Card title="Período de análise" subtitle="Defina o intervalo de datas para realizar a conferência diária.">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        subtitle="Compare o valor total recebido na cobrança com as receitas registradas no saldo diário."
+        actions={
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <Input
               type="date"
               label="Início"
               value={periodoInicio}
-              onChange={(e) => setPeriodoInicio(e.target.value)}
+              onChange={(event) => {
+                const valor = event.target.value;
+                setPeriodoInicio(valor);
+                if (valor && valor > periodoFim) {
+                  setPeriodoFim(valor);
+                }
+              }}
             />
             <Input
               type="date"
               label="Fim"
+              min={periodoInicio}
               value={periodoFim}
-              onChange={(e) => setPeriodoFim(e.target.value)}
+              onChange={(event) => setPeriodoFim(event.target.value)}
             />
+            <div className="text-sm text-gray-500">Intervalo: {intervaloDatas.length} dia(s)</div>
           </div>
-        </Card>
+        }
+      />
 
-        <Card
-          title="Resultado da conferência"
-          subtitle="Acompanhe o total registrado na cobrança e no saldo diário, com destaque para eventuais divergências."
-        >
-          {erro && (
-            <div className="mb-4 rounded-md bg-red-50 border border-red-200 p-3 text-red-700">
-              {erro}
-            </div>
-          )}
+      <div className="page-content space-y-6">
+        {erro && (
+          <Card variant="danger" title="Erro ao carregar auditoria">
+            <p className="text-sm text-error-700">{erro}</p>
+          </Card>
+        )}
 
-          {carregando ? (
-            <div className="py-8 flex justify-center">
-              <Loading text="Carregando dados de auditoria..." />
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div className="rounded-lg border p-3 bg-gray-50">
-                  <p className="text-sm text-gray-600">Total cobrança (período)</p>
-                  <p className="text-xl font-semibold text-gray-800">{formatCurrency(somaTotaisCobranca)}</p>
+        {carregando ? (
+          <div className="flex justify-center py-12">
+            <Loading text="Carregando auditoria de receitas..." />
+          </div>
+        ) : (
+          <>
+            <Card
+              title="Resumo do Período"
+              subtitle="Indicadores para o intervalo selecionado"
+              variant="primary"
+            >
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-lg border border-gray-200 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Dias analisados</p>
+                  <p className="text-2xl font-semibold text-gray-900">{totaisResumo.diasComDado}</p>
                 </div>
-                <div className="rounded-lg border p-3 bg-gray-50">
-                  <p className="text-sm text-gray-600">Total saldo diário (período)</p>
-                  <p className="text-xl font-semibold text-gray-800">{formatCurrency(somaTotaisSaldo)}</p>
+                <div className="rounded-lg border border-gray-200 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Dias com divergência</p>
+                  <p className="text-2xl font-semibold text-error-600">{totaisResumo.divergencias}</p>
                 </div>
-                <div className="rounded-lg border p-3 bg-gray-50">
-                  <p className="text-sm text-gray-600">Dias com divergência</p>
-                  <p className={`text-xl font-semibold ${totalDivergencias > 0 ? 'text-red-700' : 'text-emerald-700'}`}>
-                    {totalDivergencias}
+                <div className="rounded-lg border border-gray-200 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Maior diferença</p>
+                  <p className="text-2xl font-semibold text-gray-900">
+                    {formatCurrency(Math.abs(totaisResumo.maiorDiferenca))}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-gray-200 p-4">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Soma das diferenças</p>
+                  <p className="text-2xl font-semibold text-gray-900">
+                    {formatCurrency(totaisResumo.totalCobranca - totaisResumo.totalSaldoDiario)}
                   </p>
                 </div>
               </div>
+            </Card>
 
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                        Data
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                        Total Cobrança
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                        Total Saldo Diário
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                        Diferença
-                      </th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                        Status
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {linhas.map((linha) => {
-                      const semDiferenca = Math.abs(linha.diferenca) < 0.01;
-                      return (
-                        <tr key={linha.data} className={semDiferenca ? '' : 'bg-red-50/60'}>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-800">
-                            {formatarDataPt(linha.data)}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-800">
-                            {formatCurrency(linha.totalCobranca)}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-800">
-                            {formatCurrency(linha.totalSaldoDiario)}
-                          </td>
-                          <td
-                            className={`px-4 py-3 whitespace-nowrap text-sm font-semibold ${
-                              semDiferenca ? 'text-emerald-700' : 'text-red-700'
-                            }`}
-                          >
-                            {formatCurrency(linha.diferenca)}
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-sm">
-                            {semDiferenca ? (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
-                                Conciliado
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
-                                Divergente
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+            <Card title="Totais por Origem" subtitle="Visão consolidada do período">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-lg border border-gray-200 p-4 bg-gray-50">
+                  <p className="text-sm text-gray-600">Valor recebido total (cobrança)</p>
+                  <p className="text-2xl font-semibold text-gray-900">{formatCurrency(totaisResumo.totalCobranca)}</p>
+                </div>
+                <div className="rounded-lg border border-gray-200 p-4 bg-gray-50">
+                  <p className="text-sm text-gray-600">Receitas lançadas no saldo diário</p>
+                  <p className="text-2xl font-semibold text-gray-900">
+                    {formatCurrency(totaisResumo.totalSaldoDiario)}
+                  </p>
+                </div>
               </div>
-            </div>
-          )}
-        </Card>
+            </Card>
+
+            <Card
+              title="Detalhamento por Dia"
+              subtitle="Valor recebido na cobrança x Receita no saldo diário"
+            >
+              {linhas.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  Nenhum lançamento encontrado para o período selecionado. Ajuste as datas para visualizar os dias com
+                  registros (a partir de 12/11/2025).
+                </p>
+              ) : (
+                <div className="overflow-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="border-b-2 border-gray-300 bg-gray-50">
+                      <tr>
+                        <th className="px-3 py-3 text-left font-semibold text-gray-700">Data</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-700">Total Cobrança</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-700">Total Saldo Diário</th>
+                        <th className="px-3 py-3 text-right font-semibold text-error-700">Diferença</th>
+                        <th className="px-3 py-3 text-right font-semibold text-gray-700">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {linhas.map((linha) => {
+                        const temDivergencia = Math.abs(linha.diferenca) > 0.01;
+                        return (
+                          <tr
+                            key={linha.data}
+                            className={temDivergencia ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-50'}
+                          >
+                            <td className="px-3 py-3 font-medium text-gray-900">{formatarDataPt(linha.data)}</td>
+                            <td className="px-3 py-3 text-right text-gray-700">
+                              {formatCurrency(linha.totalCobranca)}
+                            </td>
+                            <td className="px-3 py-3 text-right text-gray-700">
+                              {formatCurrency(linha.totalSaldoDiario)}
+                            </td>
+                            <td className={`px-3 py-3 text-right font-bold ${temDivergencia ? 'text-error-700' : 'text-gray-600'}`}>
+                              {temDivergencia && '⚠️ '}
+                              {formatCurrency(linha.diferenca)}
+                            </td>
+                            <td className="px-3 py-3 text-right">
+                              {temDivergencia ? (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                                  Divergente
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">
+                                  Conciliado
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          </>
+        )}
       </div>
     </>
   );
