@@ -629,40 +629,79 @@ const RelatorioCobrancaPage: React.FC = () => {
     }
 
     const doc = new jsPDF('portrait', 'mm', 'a4');
-    const margem = 12;
+    const margem = 10;
     const larguraPagina = doc.internal.pageSize.getWidth();
     const larguraUtil = larguraPagina - 2 * margem;
+    const alturaUtil = doc.internal.pageSize.getHeight() - 2 * margem;
+
+    const todosTiposUnicos = new Set<string>();
+    relatorio.bancosCategorizado.forEach((banco) => {
+      [...banco.titulos.tiposReceitaPrevista, ...banco.titulos.tiposOutrasReceitas].forEach((tipo) => {
+        todosTiposUnicos.add(tipo.tipoNome);
+      });
+      [...banco.depositos.tiposReceitaPrevista, ...banco.depositos.tiposOutrasReceitas].forEach((tipo) => {
+        todosTiposUnicos.add(tipo.tipoNome);
+      });
+    });
+    const todosOsTiposOrdenados = Array.from(todosTiposUnicos).sort();
+
+    const calcularFatorCompactacao = () => {
+      const quantidadeTipos = todosOsTiposOrdenados.length;
+      const quantidadeBancos = relatorio.bancosCategorizado.length;
+      const linhasResumoBanco = quantidadeBancos + 2; // dados + cabeçalho/rodapé
+      const linhasTitulos = relatorio.bancosCategorizado.some((b) => b.titulos.total > 0)
+        ? quantidadeTipos + 2 // tipos + cabeçalho e total
+        : 0;
+      const linhasDepositos = relatorio.bancosCategorizado.some((b) => b.depositos.total > 0)
+        ? quantidadeTipos + 2
+        : 0;
+
+      const linhasTotaisEstimadas = linhasResumoBanco + linhasTitulos + linhasDepositos + 10; // espaçadores e cards
+
+      if (linhasTotaisEstimadas > 60) return 0.72;
+      if (linhasTotaisEstimadas > 45) return 0.8;
+      if (linhasTotaisEstimadas > 35) return 0.88;
+      if (linhasTotaisEstimadas > 28) return 0.94;
+      return 1;
+    };
+
+    const fatorCompactacao = calcularFatorCompactacao();
+    const escalar = (valor: number, minimo?: number) => {
+      const ajustado = Math.round(valor * fatorCompactacao * 100) / 100;
+      if (minimo === undefined) return ajustado;
+      return Math.max(minimo, ajustado);
+    };
 
     // Cabeçalho
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
+    doc.setFontSize(escalar(14, 11));
     doc.text('Relatório de Cobrança', margem, 12);
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
+    doc.setFontSize(escalar(9, 7));
     doc.text(`Data: ${formatarDataPt(relatorio.data)}`, margem, 18);
 
     let posY = 24;
 
     // ============ INDICADORES SUPERIORES ============
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
+    doc.setFontSize(escalar(10, 8));
     doc.text('Indicadores do Dia', margem, posY);
-    posY += 2;
+    posY += escalar(2, 1);
 
     const cardWidth = larguraUtil / 3 - 2;
-    const cardHeight = 18;
+    const cardHeight = escalar(18, 12);
 
     // Card 1: Previsto
     doc.setDrawColor(59, 130, 246); // blue
     doc.setFillColor(239, 246, 255); // blue-50
     doc.roundedRect(margem, posY, cardWidth, cardHeight, 2, 2, 'FD');
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
+    doc.setFontSize(escalar(7, 6));
     doc.setTextColor(55, 65, 81); // gray-700
     doc.text('PREVISTO', margem + cardWidth / 2, posY + 4, { align: 'center' });
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
+    doc.setFontSize(escalar(11, 9));
     doc.setTextColor(30, 64, 175); // blue-800
     doc.text(formatCurrency(relatorio.totais.previsto), margem + cardWidth / 2, posY + 10, { align: 'center' });
 
@@ -673,11 +712,11 @@ const RelatorioCobrancaPage: React.FC = () => {
     doc.setFillColor(240, 253, 244); // green-50
     doc.roundedRect(card2X, posY, cardWidth, cardHeight, 2, 2, 'FD');
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
+    doc.setFontSize(escalar(7, 6));
     doc.setTextColor(55, 65, 81);
     doc.text('REALIZADO', card2X + cardWidth / 2, posY + 4, { align: 'center' });
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
+    doc.setFontSize(escalar(11, 9));
     doc.setTextColor(21, 128, 61); // green-700
     doc.text(formatCurrency(totalReceitaPrevista), card2X + cardWidth / 2, posY + 10, { align: 'center' });
 
@@ -690,17 +729,17 @@ const RelatorioCobrancaPage: React.FC = () => {
     doc.setFillColor(250, 245, 255); // purple-50
     doc.roundedRect(card3X, posY, cardWidth, cardHeight, 2, 2, 'FD');
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
+    doc.setFontSize(escalar(7, 6));
     doc.setTextColor(55, 65, 81);
     doc.text('% COBERTURA', card3X + cardWidth / 2, posY + 4, { align: 'center' });
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
+    doc.setFontSize(escalar(14, 11));
     doc.setTextColor(126, 34, 206); // purple-700
     doc.text(`${cobertura}%`, card3X + cardWidth / 2, posY + 11, { align: 'center' });
 
     // Linha divisória adicional nos cards
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(6);
+    doc.setFontSize(escalar(6, 5));
     doc.setTextColor(107, 114, 128); // gray-500
     doc.text('Títulos + Depósitos', margem + cardWidth / 2, posY + 15, { align: 'center' });
     doc.text('Total do dia', card2X + cardWidth / 2, posY + 15, { align: 'center' });
@@ -709,13 +748,13 @@ const RelatorioCobrancaPage: React.FC = () => {
     // Reset colors
     doc.setTextColor(0, 0, 0);
 
-    posY += cardHeight + 8;
+    posY += cardHeight + escalar(6, 4);
 
     // Seção: Resumo por Banco
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
+    doc.setFontSize(escalar(10, 8));
     doc.text('Resumo por Banco', margem, posY);
-    posY += 6;
+    posY += escalar(5, 4);
 
     const resumoBancoData = relatorio.bancosCategorizado.map(banco => [
       banco.nome,
@@ -729,22 +768,22 @@ const RelatorioCobrancaPage: React.FC = () => {
       body: resumoBancoData,
       foot: [['TOTAL', formatCurrency(totalBancos)]],
       theme: 'grid',
-      styles: { fontSize: 8, halign: 'center', cellPadding: 1.5, lineWidth: 0.1, lineColor: [0, 0, 0] },
-      headStyles: { fillColor: [100, 116, 139], textColor: 255, fontStyle: 'bold', fontSize: 8, halign: 'center' },
+      styles: { fontSize: escalar(8, 6), halign: 'center', cellPadding: escalar(1.2, 0.8), lineWidth: 0.1, lineColor: [0, 0, 0] },
+      headStyles: { fillColor: [100, 116, 139], textColor: 255, fontStyle: 'bold', fontSize: escalar(8, 6), halign: 'center' },
       columnStyles: { 0: { halign: 'left' } },
-      footStyles: { fontStyle: 'bold', fillColor: [226, 232, 240], textColor: [0, 0, 0] },
+      footStyles: { fontStyle: 'bold', fontSize: escalar(8, 6), fillColor: [226, 232, 240], textColor: [0, 0, 0] },
       margin: { left: margem, right: margem },
       tableLineWidth: 0.1,
       tableLineColor: [0, 0, 0],
     });
 
-    posY = (doc as any).lastAutoTable.finalY + 8;
+    posY = Math.min((doc as any).lastAutoTable.finalY + escalar(6, 4), margem + alturaUtil - 4);
 
     // Seção: Resumo por Conta de Receita
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
+    doc.setFontSize(escalar(10, 8));
     doc.text('Resumo por Conta de Receita - Realizado', margem, posY);
-    posY += 6;
+    posY += escalar(5, 4);
 
     // Títulos e Depósitos em uma única tabela
     const totalReceitaPrevistaGeral = relatorio.totais.titulosTotalReceitaPrevista + relatorio.totais.depositosTotalReceitaPrevista;
@@ -775,36 +814,24 @@ const RelatorioCobrancaPage: React.FC = () => {
         formatCurrency(totalGeral)
       ]],
       theme: 'grid',
-      styles: { fontSize: 8, halign: 'center', cellPadding: 1.5, lineWidth: 0.1, lineColor: [0, 0, 0] },
-      headStyles: { fillColor: [100, 116, 139], textColor: 255, fontStyle: 'bold', fontSize: 8, halign: 'center' },
+      styles: { fontSize: escalar(8, 6), halign: 'center', cellPadding: escalar(1.2, 0.8), lineWidth: 0.1, lineColor: [0, 0, 0] },
+      headStyles: { fillColor: [100, 116, 139], textColor: 255, fontStyle: 'bold', fontSize: escalar(8, 6), halign: 'center' },
       columnStyles: { 0: { halign: 'left' } },
-      footStyles: { fontStyle: 'bold', fillColor: [226, 232, 240], textColor: [0, 0, 0] },
+      footStyles: { fontStyle: 'bold', fontSize: escalar(8, 6), fillColor: [226, 232, 240], textColor: [0, 0, 0] },
       margin: { left: margem, right: margem },
       tableLineWidth: 0.1,
       tableLineColor: [0, 0, 0],
     });
 
-    posY = (doc as any).lastAutoTable.finalY + 8;
-
-    // Coletar todos os tipos únicos de títulos E depósitos para garantir mesma ordem
-    const todosTiposUnicos = new Set<string>();
-    relatorio.bancosCategorizado.forEach(banco => {
-      [...banco.titulos.tiposReceitaPrevista, ...banco.titulos.tiposOutrasReceitas].forEach(tipo => {
-        todosTiposUnicos.add(tipo.tipoNome);
-      });
-      [...banco.depositos.tiposReceitaPrevista, ...banco.depositos.tiposOutrasReceitas].forEach(tipo => {
-        todosTiposUnicos.add(tipo.tipoNome);
-      });
-    });
-    const todosOsTiposOrdenados = Array.from(todosTiposUnicos).sort();
+    posY = Math.min((doc as any).lastAutoTable.finalY + escalar(6, 4), margem + alturaUtil - 4);
 
     // Seção: Receitas em Títulos (formato tabular - tipos x bancos)
     const temTitulos = relatorio.bancosCategorizado.some(b => b.titulos.total > 0);
     if (temTitulos) {
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10);
+      doc.setFontSize(escalar(10, 8));
       doc.text('Receitas em Títulos por Banco', margem, posY);
-      posY += 4;
+      posY += escalar(3, 2);
 
       const bancosComTitulos = relatorio.bancosCategorizado.filter(b => b.titulos.total > 0);
 
@@ -838,7 +865,7 @@ const RelatorioCobrancaPage: React.FC = () => {
 
       // Calcular largura das colunas de valores
       const numBancos = bancosComTitulos.length;
-      const larguraTipoReceita = 65;
+      const larguraTipoReceita = escalar(65, 55);
       const larguraRestante = larguraUtil - larguraTipoReceita;
       const larguraColValor = larguraRestante / (numBancos + 1); // +1 para coluna Total
 
@@ -856,25 +883,25 @@ const RelatorioCobrancaPage: React.FC = () => {
         body: bodyTitulos,
         foot: [footerTitulos],
         theme: 'grid',
-        styles: { fontSize: 7, halign: 'center', cellPadding: 1.5, lineWidth: 0.1, lineColor: [0, 0, 0] },
-        headStyles: { fillColor: [31, 73, 125], textColor: 255, fontStyle: 'bold', fontSize: 8, halign: 'center' },
+        styles: { fontSize: escalar(7, 6), halign: 'center', cellPadding: escalar(1.1, 0.7), lineWidth: 0.1, lineColor: [0, 0, 0] },
+        headStyles: { fillColor: [31, 73, 125], textColor: 255, fontStyle: 'bold', fontSize: escalar(8, 6), halign: 'center' },
         columnStyles: columnStylesTitulos,
-        footStyles: { fontStyle: 'bold', fontSize: 8, fillColor: [220, 235, 250], textColor: [0, 0, 0] },
+        footStyles: { fontStyle: 'bold', fontSize: escalar(8, 6), fillColor: [220, 235, 250], textColor: [0, 0, 0] },
         margin: { left: margem, right: margem },
         tableLineWidth: 0.1,
         tableLineColor: [0, 0, 0],
       });
 
-      posY = (doc as any).lastAutoTable.finalY + 6;
+      posY = Math.min((doc as any).lastAutoTable.finalY + escalar(5, 3), margem + alturaUtil - 4);
     }
 
     // Seção: Receitas em Depósitos (formato tabular - tipos x bancos)
     const temDepositos = relatorio.bancosCategorizado.some(b => b.depositos.total > 0);
     if (temDepositos) {
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10);
+      doc.setFontSize(escalar(10, 8));
       doc.text('Receitas em Depósitos por Banco', margem, posY);
-      posY += 4;
+      posY += escalar(3, 2);
 
       const bancosComDepositos = relatorio.bancosCategorizado.filter(b => b.depositos.total > 0);
 
@@ -908,7 +935,7 @@ const RelatorioCobrancaPage: React.FC = () => {
 
       // Calcular largura das colunas de valores
       const numBancosDepositos = bancosComDepositos.length;
-      const larguraTipoReceitaDepositos = 65;
+      const larguraTipoReceitaDepositos = escalar(65, 55);
       const larguraRestanteDepositos = larguraUtil - larguraTipoReceitaDepositos;
       const larguraColValorDepositos = larguraRestanteDepositos / (numBancosDepositos + 1); // +1 para coluna Total
 
@@ -926,23 +953,23 @@ const RelatorioCobrancaPage: React.FC = () => {
         body: bodyDepositos,
         foot: [footerDepositos],
         theme: 'grid',
-        styles: { fontSize: 7, halign: 'center', cellPadding: 1.5, lineWidth: 0.1, lineColor: [0, 0, 0] },
-        headStyles: { fillColor: [34, 139, 34], textColor: 255, fontStyle: 'bold', fontSize: 8, halign: 'center' },
+        styles: { fontSize: escalar(7, 6), halign: 'center', cellPadding: escalar(1.1, 0.7), lineWidth: 0.1, lineColor: [0, 0, 0] },
+        headStyles: { fillColor: [34, 139, 34], textColor: 255, fontStyle: 'bold', fontSize: escalar(8, 6), halign: 'center' },
         columnStyles: columnStylesDepositos,
-        footStyles: { fontStyle: 'bold', fontSize: 8, fillColor: [220, 250, 220], textColor: [0, 0, 0] },
+        footStyles: { fontStyle: 'bold', fontSize: escalar(8, 6), fillColor: [220, 250, 220], textColor: [0, 0, 0] },
         margin: { left: margem, right: margem },
         tableLineWidth: 0.1,
         tableLineColor: [0, 0, 0],
       });
 
-      posY = (doc as any).lastAutoTable.finalY + 6;
+      posY = Math.min((doc as any).lastAutoTable.finalY + escalar(5, 3), margem + alturaUtil - 4);
     }
 
     // Seção: Total Previsto x Realizado
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
+    doc.setFontSize(escalar(10, 8));
     doc.text('Total Previsto x Realizado', margem, posY);
-    posY += 2;
+    posY += escalar(2, 1);
 
     const diferenca = relatorio.totais.realizado - relatorio.totais.previsto;
 
@@ -955,7 +982,7 @@ const RelatorioCobrancaPage: React.FC = () => {
         ['% de Cobertura', `${relatorio.totais.previsto > 0 ? ((relatorio.totais.realizado / relatorio.totais.previsto) * 100).toFixed(1) : '0'}%`],
       ],
       theme: 'grid',
-      styles: { fontSize: 9, halign: 'right', cellPadding: 2, fontStyle: 'bold', lineWidth: 0.1, lineColor: [0, 0, 0] },
+      styles: { fontSize: escalar(9, 7), halign: 'right', cellPadding: escalar(1.4, 0.9), fontStyle: 'bold', lineWidth: 0.1, lineColor: [0, 0, 0] },
       columnStyles: { 0: { halign: 'left', fontStyle: 'bold' }, 1: { fontStyle: 'bold' } },
       margin: { left: margem, right: margem },
       tableLineWidth: 0.1,
