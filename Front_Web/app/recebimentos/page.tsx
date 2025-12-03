@@ -1,36 +1,45 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Header } from '@/components/layout';
 import { Button, Card, Loading } from '@/components/ui';
 import { getSupabaseClient } from '@/lib/supabaseClient';
 import { formatCurrency } from '@/lib/mathParser';
 
-interface ReceitaDetalhada {
-  rec_id: number;
-  rec_valor: number;
-  rec_data: string;
-  rec_ctr_id: number;
-  tipo_receita?: {
-    tpr_id: number;
-    tpr_nome: string;
-    tpr_codigo: string;
-  } | null;
-  conta_receita?: {
-    ctr_id: number;
-    ctr_nome: string;
-    ctr_codigo: string;
-  } | null;
-  banco?: {
-    ban_id: number;
-    ban_nome: string;
-  } | null;
+interface CobrancaRow {
+  cob_id: number;
+  cob_valor: number;
+  cob_data: string;
+  cob_ctr_id: number | null;
+  cob_tpr_id: number | null;
+  cob_ban_id: number | null;
+  ctr_contas_receita:
+    | { ctr_id: number; ctr_nome?: string | null; ctr_codigo?: string | null }
+    | { ctr_id: number; ctr_nome?: string | null; ctr_codigo?: string | null }[]
+    | null;
+  tpr_tipos_receita:
+    | { tpr_id: number; tpr_nome?: string | null; tpr_codigo?: string | null }
+    | { tpr_id: number; tpr_nome?: string | null; tpr_codigo?: string | null }[]
+    | null;
+  ban_bancos:
+    | { ban_nome?: string | null }
+    | { ban_nome?: string | null }[]
+    | null;
 }
 
-interface ResumoCategoria {
-  categoria: string;
-  total: number;
-  percentual: number;
+interface RecebimentoFormatado {
+  id: number;
+  valor: number;
+  data: string;
+  contaId: number | null;
+  contaNome: string;
+  contaCodigo: string;
+  tipoId: number | null;
+  tipoNome: string;
+  tipoCodigo: string;
+  bancoId: number | null;
+  bancoNome: string;
+  classificacaoConta: 'titulos' | 'depositos' | 'outros';
 }
 
 interface DadosGrafico {
@@ -38,9 +47,50 @@ interface DadosGrafico {
   valor: number;
 }
 
+interface ResumoAuditoria {
+  totalCobranca: number;
+  totalSaldoDiario: number;
+  diferenca: number;
+}
+
+const extrairRelacao = <T,>(valor: T | T[] | null | undefined): T | null => {
+  if (!valor) return null;
+  return Array.isArray(valor) ? valor[0] ?? null : valor;
+};
+
+const normalizarTexto = (valor?: string | null) =>
+  valor?.normalize('NFD').replace(/\p{Diacritic}/gu, '').toUpperCase().trim() ?? '';
+
+const classificarConta = (
+  codigoConta: string,
+  nomeConta: string,
+): 'titulos' | 'depositos' | 'outros' => {
+  const codigoLimpo = codigoConta.trim();
+  const nomeNormalizado = normalizarTexto(nomeConta);
+
+  if (codigoLimpo.startsWith('200') || nomeNormalizado.includes('TITULO')) {
+    return 'titulos';
+  }
+  if (
+    codigoLimpo.startsWith('201') ||
+    nomeNormalizado.includes('DEPOSITO') ||
+    nomeNormalizado.includes('DEPÓSITO') ||
+    nomeNormalizado.includes('PIX')
+  ) {
+    return 'depositos';
+  }
+  return 'outros';
+};
+
 export default function RecebimentosPage() {
   const [carregando, setCarregando] = useState(true);
-  const [receitas, setReceitas] = useState<ReceitaDetalhada[]>([]);
+  const [recebimentos, setRecebimentos] = useState<RecebimentoFormatado[]>([]);
+  const [resumoAuditoria, setResumoAuditoria] = useState<ResumoAuditoria>({
+    totalCobranca: 0,
+    totalSaldoDiario: 0,
+    diferenca: 0,
+  });
+
   const [periodoInicio, setPeriodoInicio] = useState('');
   const [periodoFim, setPeriodoFim] = useState('');
   const [filtroInicio, setFiltroInicio] = useState('');
@@ -48,7 +98,6 @@ export default function RecebimentosPage() {
   const [filtroTipo, setFiltroTipo] = useState<'todos' | 'titulos' | 'depositos'>('todos');
 
   useEffect(() => {
-    // Define período padrão: mês atual
     const hoje = new Date();
     const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
     const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
@@ -71,80 +120,89 @@ export default function RecebimentosPage() {
       try {
         const supabase = getSupabaseClient();
 
-        const { data, error } = await supabase
-          .from('rec_receitas')
-          .select(`
-            rec_id,
-            rec_valor,
-            rec_data,
-            rec_ctr_id,
-            ctr_contas_receita!rec_ctr_id (
-              ctr_id,
-              ctr_nome,
-              ctr_codigo,
-              ctr_ban_id
+        const [cobrancasRes, receitasSaldoRes] = await Promise.all([
+          supabase
+            .from('cob_cobrancas')
+            .select(
+              `
+              cob_id,
+              cob_valor,
+              cob_data,
+              cob_ctr_id,
+              cob_tpr_id,
+              cob_ban_id,
+              ctr_contas_receita(ctr_id, ctr_nome, ctr_codigo),
+              tpr_tipos_receita(tpr_id, tpr_nome, tpr_codigo),
+              ban_bancos(ban_nome)
+            `,
             )
-          `)
-          .gte('rec_data', periodoInicio)
-          .lte('rec_data', periodoFim)
-          .order('rec_data', { ascending: false });
-        if (error) {
-          console.error('Erro ao buscar:', error);
-          throw error;
-        }
+            .gte('cob_data', periodoInicio)
+            .lte('cob_data', periodoFim)
+            .order('cob_data', { ascending: false }),
+          supabase
+            .from('rec_receitas')
+            .select('rec_valor, rec_data, ctr_contas_receita(ctr_nome)')
+            .gte('rec_data', periodoInicio)
+            .lte('rec_data', periodoFim),
+        ]);
 
-        // Buscar bancos separadamente
-        const bancosIds = new Set<number>();
+        if (cobrancasRes.error) throw cobrancasRes.error;
+        if (receitasSaldoRes.error) throw receitasSaldoRes.error;
 
-        (data || []).forEach((rec: any) => {
-          const conta = Array.isArray(rec.ctr_contas_receita)
-            ? rec.ctr_contas_receita[0]
-            : rec.ctr_contas_receita;
-          if (conta?.ctr_ban_id) bancosIds.add(conta.ctr_ban_id);
-        });
+        const cobrancas = (cobrancasRes.data as CobrancaRow[] | null) ?? [];
+        const recebimentosFormatados: RecebimentoFormatado[] = cobrancas.map((item) => {
+          const conta = extrairRelacao(item.ctr_contas_receita);
+          const tipo = extrairRelacao(item.tpr_tipos_receita);
+          const banco = extrairRelacao(item.ban_bancos);
 
-        // Buscar bancos
-        const { data: bancosData } = await supabase
-          .from('ban_bancos')
-          .select('ban_id, ban_nome')
-          .in('ban_id', Array.from(bancosIds));
-
-        const bancosMap = new Map((bancosData || []).map((b: any) => [b.ban_id, b]));
-
-        // Transformar dados para estrutura mais limpa
-        const receitasFormatadas = (data || []).map((rec: any) => {
-          const conta = Array.isArray(rec.ctr_contas_receita)
-            ? rec.ctr_contas_receita[0]
-            : rec.ctr_contas_receita;
-
-          const banco = conta?.ctr_ban_id ? bancosMap.get(conta.ctr_ban_id) : null;
+          const contaCodigo = conta?.ctr_codigo ? String(conta.ctr_codigo) : '';
+          const contaNome = conta?.ctr_nome ?? 'Conta não informada';
 
           return {
-            rec_id: rec.rec_id,
-            rec_valor: rec.rec_valor,
-            rec_data: rec.rec_data,
-            rec_ctr_id: rec.rec_ctr_id,
-            conta_receita: conta ? {
-              ctr_id: conta.ctr_id,
-              ctr_nome: conta.ctr_nome,
-              ctr_codigo: conta.ctr_codigo
-            } : null,
-            tipo_receita: null, // Temporariamente desabilitado até migration ser aplicada
-            banco: banco ? {
-              ban_id: banco.ban_id,
-              ban_nome: banco.ban_nome
-            } : null
-          };
+            id: item.cob_id,
+            valor: Number(item.cob_valor ?? 0),
+            data: item.cob_data,
+            contaId: item.cob_ctr_id,
+            contaNome,
+            contaCodigo,
+            tipoId: item.cob_tpr_id,
+            tipoNome: tipo?.tpr_nome ?? 'Tipo não informado',
+            tipoCodigo: tipo?.tpr_codigo ?? '',
+            bancoId: item.cob_ban_id,
+            bancoNome: banco?.ban_nome ?? 'Banco não informado',
+            classificacaoConta: classificarConta(contaCodigo, contaNome),
+          } satisfies RecebimentoFormatado;
         });
-        setReceitas(receitasFormatadas);
+
+        const totalSaldoDiario = ((receitasSaldoRes.data as any[]) ?? []).reduce((acc, rec) => {
+          const conta = extrairRelacao(rec.ctr_contas_receita);
+          const contaNome = conta?.ctr_nome ?? '';
+          const contaUpper = contaNome.toUpperCase().trim();
+
+          if (contaUpper.includes('APLICACAO') || contaUpper.includes('APLICAÇÃO')) {
+            return acc;
+          }
+          return acc + Number(rec.rec_valor ?? 0);
+        }, 0);
+
+        const totalCobranca = recebimentosFormatados.reduce((sum, r) => sum + r.valor, 0);
+
+        setRecebimentos(recebimentosFormatados);
+        setResumoAuditoria({
+          totalCobranca,
+          totalSaldoDiario,
+          diferenca: Number((totalCobranca - totalSaldoDiario).toFixed(2)),
+        });
       } catch (erro) {
-        console.error('Erro ao carregar receitas:', erro);
+        console.error('Erro ao carregar recebimentos:', erro);
+        setRecebimentos([]);
+        setResumoAuditoria({ totalCobranca: 0, totalSaldoDiario: 0, diferenca: 0 });
       } finally {
         setCarregando(false);
       }
     };
 
-    carregarReceitas();
+    void carregarReceitas();
   }, [periodoInicio, periodoFim]);
 
   const aplicarPeriodo = () => {
@@ -153,115 +211,60 @@ export default function RecebimentosPage() {
     setPeriodoFim(filtroFim || filtroInicio);
   };
 
-  const normalizarTexto = (valor?: string | null) =>
-    valor?.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase() ?? '';
-
-  const receitasFiltradas = useMemo(() => {
-    return receitas.filter((rec) => {
-      const nomeConta = normalizarTexto(rec.conta_receita?.ctr_nome);
-      const codigoConta = rec.conta_receita?.ctr_codigo ?? '';
-
+  const recebimentosFiltrados = useMemo(() => {
+    return recebimentos.filter((rec) => {
       if (filtroTipo === 'titulos') {
-        return (
-          nomeConta.includes('titulo') ||
-          nomeConta.includes('título') ||
-          nomeConta.includes('boleto') ||
-          codigoConta.startsWith('301')
-        );
+        return rec.classificacaoConta === 'titulos';
       }
       if (filtroTipo === 'depositos') {
-        return (
-          nomeConta.includes('deposito') ||
-          nomeConta.includes('deposito') ||
-          nomeConta.includes('pix') ||
-          nomeConta.includes('transferencia') ||
-          codigoConta.startsWith('302')
-        );
+        return rec.classificacaoConta === 'depositos';
       }
       return true;
     });
-  }, [filtroTipo, receitas]);
+  }, [filtroTipo, recebimentos]);
 
   const totalGeral = useMemo(() => {
-    return receitasFiltradas.reduce((sum, r) => sum + r.rec_valor, 0);
-  }, [receitasFiltradas]);
+    return recebimentosFiltrados.reduce((sum, r) => sum + r.valor, 0);
+  }, [recebimentosFiltrados]);
 
-  // Cards de resumo por categoria
-  const resumoCategorias = useMemo((): ResumoCategoria[] => {
-    const categorias = new Map<string, number>();
-
-    receitasFiltradas.forEach(rec => {
-      const conta = rec.conta_receita?.ctr_codigo || '';
-
-      // Classificar por código de conta de receita
-      if (conta.startsWith('301')) {
-        categorias.set('Receita Prevista', (categorias.get('Receita Prevista') || 0) + rec.rec_valor);
-      } else if (conta.startsWith('302')) {
-        categorias.set('Atrasados', (categorias.get('Atrasados') || 0) + rec.rec_valor);
-      } else if (conta.startsWith('303')) {
-        categorias.set('Adiantados', (categorias.get('Adiantados') || 0) + rec.rec_valor);
-      } else if (conta.startsWith('304')) {
-        categorias.set('Exportação', (categorias.get('Exportação') || 0) + rec.rec_valor);
-      } else {
-        categorias.set('Outros', (categorias.get('Outros') || 0) + rec.rec_valor);
-      }
-    });
-
-    return Array.from(categorias.entries()).map(([categoria, total]) => ({
-      categoria,
-      total,
-      percentual: totalGeral > 0 ? (total / totalGeral) * 100 : 0
-    }));
-  }, [receitasFiltradas, totalGeral]);
-
-  // Dados para gráfico evolução por banco
-  const dadosGraficoBancos = useMemo((): DadosGrafico[] => {
+  const dadosPorTipo = useMemo((): DadosGrafico[] => {
     const mapa = new Map<string, number>();
 
-    receitasFiltradas.forEach(rec => {
-      const banco = rec.banco?.ban_nome || 'Sem banco';
-      mapa.set(banco, (mapa.get(banco) || 0) + rec.rec_valor);
+    recebimentosFiltrados.forEach((rec) => {
+      const chave = rec.tipoNome || 'Tipo não informado';
+      mapa.set(chave, (mapa.get(chave) ?? 0) + rec.valor);
     });
 
     return Array.from(mapa.entries())
       .map(([nome, valor]) => ({ nome, valor }))
       .sort((a, b) => b.valor - a.valor);
-  }, [receitasFiltradas]);
+  }, [recebimentosFiltrados]);
 
-  // Dados para gráfico por tipo de conta
   const dadosGraficoContas = useMemo((): DadosGrafico[] => {
     const mapa = new Map<string, number>();
 
-    receitasFiltradas.forEach(rec => {
-      const conta = rec.conta_receita?.ctr_nome || 'Sem conta';
-      mapa.set(conta, (mapa.get(conta) || 0) + rec.rec_valor);
+    recebimentosFiltrados.forEach((rec) => {
+      const conta = rec.contaNome || 'Conta não informada';
+      mapa.set(conta, (mapa.get(conta) ?? 0) + rec.valor);
     });
 
     return Array.from(mapa.entries())
       .map(([nome, valor]) => ({ nome, valor }))
       .sort((a, b) => b.valor - a.valor);
-  }, [receitasFiltradas]);
+  }, [recebimentosFiltrados]);
 
-  const dadosPorTipo = useMemo((): DadosGrafico[] => {
-    return resumoCategorias
-      .filter((cat) => cat.categoria !== 'Outros')
-      .map((cat) => ({ nome: cat.categoria, valor: cat.total }))
+  const dadosGraficoBancos = useMemo((): DadosGrafico[] => {
+    const mapa = new Map<string, number>();
+
+    recebimentosFiltrados.forEach((rec) => {
+      const banco = rec.bancoNome || 'Banco não informado';
+      mapa.set(banco, (mapa.get(banco) ?? 0) + rec.valor);
+    });
+
+    return Array.from(mapa.entries())
+      .map(([nome, valor]) => ({ nome, valor }))
       .sort((a, b) => b.valor - a.valor);
-  }, [resumoCategorias]);
-
-  // Dados para gráfico por tipo de receita (temporariamente desabilitado)
-  // const dadosGraficoTipos = useMemo((): DadosGrafico[] => {
-  //   const mapa = new Map<string, number>();
-  //
-  //   receitas.forEach(rec => {
-  //     const tipo = rec.tipo_receita?.tpr_nome || 'Sem tipo';
-  //     mapa.set(tipo, (mapa.get(tipo) || 0) + rec.rec_valor);
-  //   });
-  //
-  //   return Array.from(mapa.entries())
-  //     .map(([nome, valor]) => ({ nome, valor }))
-  //     .sort((a, b) => b.valor - a.valor);
-  // }, [receitas]);
+  }, [recebimentosFiltrados]);
 
   const formatarData = (data: string) => {
     if (!data) return '-';
@@ -270,27 +273,27 @@ export default function RecebimentosPage() {
   };
 
   const renderGraficoBarras = (dados: DadosGrafico[], titulo: string) => {
-    const maxValor = Math.max(...dados.map(d => d.valor), 1);
+    const maxValor = Math.max(...dados.map((d) => d.valor), 1);
 
     return (
       <Card title={titulo}>
         <div className="space-y-3">
           {dados.length === 0 ? (
-            <p className="text-center text-gray-500 py-4">Nenhum dado disponível</p>
+            <p className="py-4 text-center text-gray-500">Nenhum dado disponível</p>
           ) : (
             dados.map((item, idx) => (
-              <div key={idx} className="space-y-1">
+              <div key={`${titulo}-${idx}`} className="space-y-1">
                 <div className="flex justify-between text-sm">
                   <span className="font-medium text-gray-700">{item.nome}</span>
                   <span className="font-semibold text-success-700">{formatCurrency(item.valor)}</span>
                 </div>
-                <div className="h-6 bg-gray-100 rounded-full overflow-hidden">
+                <div className="h-6 overflow-hidden rounded-full bg-gray-100">
                   <div
                     className="h-full bg-gradient-to-r from-success-500 to-success-600 transition-all duration-500"
                     style={{ width: `${(item.valor / maxValor) * 100}%` }}
                   />
                 </div>
-                <div className="text-xs text-gray-500 text-right">
+                <div className="text-right text-xs text-gray-500">
                   {(totalGeral > 0 ? (item.valor / totalGeral) * 100 : 0).toFixed(1)}% do total
                 </div>
               </div>
@@ -305,17 +308,14 @@ export default function RecebimentosPage() {
     <>
       <Header
         title="Recebimentos"
-        subtitle="Análise detalhada das receitas por tipo, conta e banco"
+        subtitle="Análise detalhada das receitas lançadas na cobrança e na auditoria de saldo diário"
       />
 
       <div className="page-content space-y-6">
-        {/* Filtros de período */}
         <Card title="Período de Análise">
           <div className="flex flex-wrap items-end gap-4">
             <div>
-              <label className="text-sm font-medium text-gray-700 block mb-1">
-                Data Início
-              </label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Data Início</label>
               <input
                 type="date"
                 value={filtroInicio}
@@ -324,9 +324,7 @@ export default function RecebimentosPage() {
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-700 block mb-1">
-                Data Fim
-              </label>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Data Fim</label>
               <input
                 type="date"
                 value={filtroFim}
@@ -341,7 +339,7 @@ export default function RecebimentosPage() {
           </div>
 
           <div className="mt-4 space-y-2">
-            <p className="text-sm font-medium text-gray-700">Filtrar por tipo de recebimento</p>
+            <p className="text-sm font-medium text-gray-700">Filtrar por tipo (cob_ctr_id)</p>
             <div className="flex flex-wrap gap-2">
               {[
                 { chave: 'todos', rotulo: 'Todos' },
@@ -370,33 +368,36 @@ export default function RecebimentosPage() {
           </Card>
         ) : (
           <>
-            {/* Cards de Resumo */}
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
               <Card>
                 <div className="space-y-2">
                   <h3 className="text-sm font-medium text-gray-600">Total de Recebimentos</h3>
                   <p className="text-3xl font-bold text-success-700">{formatCurrency(totalGeral)}</p>
-                  <p className="text-xs text-gray-500">{receitasFiltradas.length} recebimento(s)</p>
+                  <p className="text-xs text-gray-500">{recebimentosFiltrados.length} lançamento(s)</p>
                 </div>
               </Card>
 
               <Card>
                 <div className="space-y-2">
-                  <h3 className="text-sm font-medium text-gray-600">Filtro de tipo</h3>
-                  <p className="text-xl font-semibold text-gray-900 capitalize">
-                    {filtroTipo === 'todos' ? 'Todos os tipos' : filtroTipo === 'titulos' ? 'Títulos' : 'Depósitos'}
-                  </p>
+                  <h3 className="text-sm font-medium text-gray-600">Receitas na cobrança</h3>
+                  <p className="text-xl font-semibold text-gray-900">{formatCurrency(resumoAuditoria.totalCobranca)}</p>
                   <p className="text-xs text-gray-500">Período: {formatarData(periodoInicio)} a {formatarData(periodoFim)}</p>
                 </div>
               </Card>
 
               <Card>
                 <div className="space-y-2">
-                  <h3 className="text-sm font-medium text-gray-600">Bancos com recebimentos</h3>
-                  <p className="text-2xl font-bold text-gray-900">{dadosGraficoBancos.length}</p>
-                  <p className="text-xs text-gray-500">
-                    Maior volume: {dadosGraficoBancos[0] ? dadosGraficoBancos[0].nome : 'Sem dados'}
-                  </p>
+                  <h3 className="text-sm font-medium text-gray-600">Receitas do saldo diário</h3>
+                  <p className="text-xl font-semibold text-gray-900">{formatCurrency(resumoAuditoria.totalSaldoDiario)}</p>
+                  <p className="text-xs text-gray-500">Conforme auditoria de receitas</p>
+                </div>
+              </Card>
+
+              <Card>
+                <div className="space-y-2">
+                  <h3 className="text-sm font-medium text-gray-600">Outros (diferença)</h3>
+                  <p className="text-2xl font-bold text-blue-900">{formatCurrency(resumoAuditoria.diferenca)}</p>
+                  <p className="text-xs text-gray-500">Cobrança - Saldo diário</p>
                 </div>
               </Card>
             </div>
@@ -419,8 +420,8 @@ export default function RecebimentosPage() {
             </Card>
 
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-              {renderGraficoBarras(dadosPorTipo, 'Recebimentos por Tipo')}
-              {renderGraficoBarras(dadosGraficoContas, 'Recebimentos por Conta')}
+              {renderGraficoBarras(dadosPorTipo, 'Recebimentos por Tipo de Conta (cob_tpr_id)')}
+              {renderGraficoBarras(dadosGraficoContas, 'Recebimentos por Conta (cob_ctr_id)')}
             </div>
           </>
         )}

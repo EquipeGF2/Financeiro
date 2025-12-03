@@ -555,6 +555,15 @@ const PagamentosPage: React.FC = () => {
     return mapa;
   }, [saldosBanco]);
 
+  const datasSaldosComValor = useMemo(() => {
+    return intervaloDatas.filter((data) => {
+      const mapaDia = mapaSaldosPorData.get(data);
+      if (!mapaDia) return false;
+      const totalDia = Array.from(mapaDia.values()).reduce((acc, valor) => acc + valor, 0);
+      return Math.abs(totalDia) > 0.0001;
+    });
+  }, [intervaloDatas, mapaSaldosPorData]);
+
   const mapaPagamentosPorData = useMemo(() => {
     const mapa = new Map<string, Map<string, number>>();
     pagamentosAreaFiltrados.forEach((item) => {
@@ -567,6 +576,15 @@ const PagamentosPage: React.FC = () => {
     });
     return mapa;
   }, [pagamentosAreaFiltrados]);
+
+  const datasPagamentosComValor = useMemo(() => {
+    return intervaloDatas.filter((data) => {
+      const mapaDia = mapaPagamentosPorData.get(data);
+      if (!mapaDia) return false;
+      const totalDia = Array.from(mapaDia.values()).reduce((acc, valor) => acc + valor, 0);
+      return Math.abs(totalDia) > 0.0001;
+    });
+  }, [intervaloDatas, mapaPagamentosPorData]);
 
   const chavesAreas = useMemo(() => resumoAreas.itens.map((item) => item.nome), [resumoAreas]);
   const chavesBancos = useMemo(() => resumoBancos.itens.map((item) => item.nome), [resumoBancos]);
@@ -636,28 +654,28 @@ const PagamentosPage: React.FC = () => {
   }, [resumoBancos]);
 
   const linhasAreas: SerieLinha[] = useMemo(() => {
-    if (!intervaloDatas.length) return [];
+    if (!datasPagamentosComValor.length) return [];
     return areasSelecionadas.map((area) => {
       const color = areaCores.get(area) ?? coresPadrao[0];
-      const values = intervaloDatas.map((data) => {
+      const values = datasPagamentosComValor.map((data) => {
         const mapaDia = mapaPagamentosPorData.get(data);
         return Number((mapaDia?.get(area) ?? 0).toFixed(2));
       });
       return { name: area, values, color };
     });
-  }, [areasSelecionadas, areaCores, intervaloDatas, mapaPagamentosPorData]);
+  }, [areasSelecionadas, areaCores, datasPagamentosComValor, mapaPagamentosPorData]);
 
   const linhasBancos: SerieLinha[] = useMemo(() => {
-    if (!intervaloDatas.length) return [];
+    if (!datasSaldosComValor.length) return [];
     return bancosSelecionados.map((banco) => {
       const color = bancoCores.get(banco) ?? coresPadrao[0];
-      const values = intervaloDatas.map((data) => {
+      const values = datasSaldosComValor.map((data) => {
         const mapaDia = mapaSaldosPorData.get(data);
         return Number((mapaDia?.get(banco) ?? 0).toFixed(2));
       });
       return { name: banco, values, color };
     });
-  }, [bancosSelecionados, bancoCores, intervaloDatas, mapaSaldosPorData]);
+  }, [bancosSelecionados, bancoCores, datasSaldosComValor, mapaSaldosPorData]);
 
   const saldoBancarioFinal = useMemo(() => {
     if (!saldosBanco.length) return 0;
@@ -1009,13 +1027,13 @@ const PagamentosPage: React.FC = () => {
                       </Button>
                     ))}
                   </div>
-                    {linhasBancos.length === 0 || intervaloDatas.length === 0 ? (
+                    {linhasBancos.length === 0 || datasSaldosComValor.length === 0 ? (
                     <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
                       Selecione ao menos um banco para visualizar a evolução dos saldos.
                     </div>
                   ) : (
                     <SimpleLineChart
-                      labels={intervaloDatas.map((data) => formatarDataCurta(data))}
+                      labels={datasSaldosComValor.map((data) => formatarDataCurta(data))}
                       series={linhasBancos}
                       yLabelFormatter={formatarMoedaCompacta}
                     />
@@ -1051,14 +1069,14 @@ const PagamentosPage: React.FC = () => {
                         </Button>
                       ))}
                     </div>
-                    {linhasAreas.length === 0 || intervaloDatas.length === 0 ? (
+                    {linhasAreas.length === 0 || datasPagamentosComValor.length === 0 ? (
                       <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
                         Selecione ao menos uma área para visualizar a evolução diária.
                       </div>
                     ) : (
                       <div className="w-full">
                         <SimpleLineChart
-                          labels={intervaloDatas.map((data) => formatarDataCurta(data))}
+                          labels={datasPagamentosComValor.map((data) => formatarDataCurta(data))}
                           series={linhasAreas}
                         />
                       </div>
