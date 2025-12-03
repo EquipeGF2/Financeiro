@@ -147,11 +147,13 @@ const SimpleLineChart: React.FC<{
 }> = ({ labels, series, legenda = true }) => {
   const width = 900;
   const height = 360;
-  const paddingX = 48;
+  const paddingX = 64;
   const paddingY = 32;
   const passoX = labels.length > 1 ? (width - paddingX * 2) / (labels.length - 1) : 0;
   const valores = series.flatMap((serie) => serie.values);
   const maxValor = valores.length ? Math.max(...valores) : 0;
+
+  const stepLabels = Math.max(1, Math.ceil(labels.length / 10));
 
   // Arredondar para valores inteiros limpos (10k, 50k, 100k, 250k, etc)
   const arredondarParaValorLimpo = (valor: number): number => {
@@ -178,7 +180,11 @@ const SimpleLineChart: React.FC<{
 
   return (
     <div className="space-y-3 w-full">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-80 w-full max-w-full">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="h-80 w-full max-w-full"
+        preserveAspectRatio="xMinYMin meet"
+      >
         <line
           x1={paddingX}
           y1={height - paddingY}
@@ -256,6 +262,9 @@ const SimpleLineChart: React.FC<{
           );
         })}
         {labels.map((label, index) => {
+          if (index !== labels.length - 1 && index % stepLabels !== 0) {
+            return null;
+          }
           const x = paddingX + passoX * index;
           return (
             <text
@@ -296,6 +305,8 @@ const PagamentosPage: React.FC = () => {
     return toISODate(inicio);
   });
   const [periodoFim, setPeriodoFim] = useState(() => toISODate(hoje));
+  const [filtroInicio, setFiltroInicio] = useState(() => periodoInicio);
+  const [filtroFim, setFiltroFim] = useState(() => periodoFim);
 
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -388,6 +399,11 @@ const PagamentosPage: React.FC = () => {
   const intervaloDatas = useMemo(
     () => gerarIntervaloDatas(periodoInicio, periodoFim),
     [periodoInicio, periodoFim],
+  );
+
+  const intervaloFiltro = useMemo(
+    () => gerarIntervaloDatas(filtroInicio, filtroFim),
+    [filtroInicio, filtroFim],
   );
 
   const pagamentosAreaFiltrados = useMemo(() => {
@@ -574,6 +590,12 @@ const PagamentosPage: React.FC = () => {
   const totalPagamentosPeriodo = useMemo(() => resumoAreas.total, [resumoAreas]);
   const totalPorBanco = useMemo(() => resumoBancos.total, [resumoBancos]);
 
+  const aplicarPeriodo = () => {
+    if (!filtroInicio) return;
+    setPeriodoInicio(filtroInicio);
+    setPeriodoFim(filtroFim || filtroInicio);
+  };
+
   const handleToggleArea = (nome: string) => {
     setAreasSelecionadas((atual) => {
       if (atual.includes(nome)) {
@@ -602,23 +624,33 @@ const PagamentosPage: React.FC = () => {
             <Input
               type="date"
               label="Início"
-              value={periodoInicio}
+              value={filtroInicio}
               onChange={(event) => {
                 const valor = event.target.value;
-                setPeriodoInicio(valor);
-                if (valor && valor > periodoFim) {
-                  setPeriodoFim(valor);
+                setFiltroInicio(valor);
+                if (valor && valor > filtroFim) {
+                  setFiltroFim(valor);
                 }
               }}
             />
             <Input
               type="date"
               label="Fim"
-              value={periodoFim}
-              min={periodoInicio}
-              onChange={(event) => setPeriodoFim(event.target.value)}
+              value={filtroFim}
+              min={filtroInicio}
+              onChange={(event) => setFiltroFim(event.target.value)}
             />
-            <div className="text-sm text-gray-500">Período com {intervaloDatas.length} dia(s)</div>
+            <Button
+              variant="primary"
+              onClick={aplicarPeriodo}
+              disabled={!filtroInicio || carregando}
+              className="sm:ml-2"
+            >
+              Aplicar período
+            </Button>
+            <div className="text-sm text-gray-500">
+              Prévia: {intervaloFiltro.length} dia(s) selecionado(s)
+            </div>
           </div>
         }
       />
