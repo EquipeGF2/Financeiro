@@ -60,6 +60,20 @@ const RelatoriosHomePage: React.FC = () => {
             </div>
           </Card>
           <Card
+            title="Saldo de Aplicação"
+            subtitle="Acompanhe o extrato diário das aplicações e resgates com saldo inicial e final."
+            variant="primary"
+          >
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Consulte o demonstrativo de aplicação por período, com movimentação diária e variação do saldo consolidado.
+              </p>
+              <Link href="/relatorios/aplicacao" className="inline-block">
+                <Button variant="primary">Abrir relatório</Button>
+              </Link>
+            </div>
+          </Card>
+          <Card
             title="Auditoria de Saldos"
             subtitle="Concilie o saldo registrado na previsão com os saldos diários informados pelos bancos."
             variant="danger"

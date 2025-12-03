@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 
 import { Header } from '@/components/layout';
 import { Button, Card, Input, Loading } from '@/components/ui';
+import { carregarExtratoAplicacao, ExtratoAplicacao } from '@/lib/aplicacao';
 import { formatCurrency } from '@/lib/mathParser';
 import { getSupabaseClient } from '@/lib/supabaseClient';
 
@@ -289,11 +290,14 @@ const PagamentosPage: React.FC = () => {
 
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
+  const [carregandoAplicacao, setCarregandoAplicacao] = useState(true);
+  const [erroAplicacao, setErroAplicacao] = useState<string | null>(null);
 
   const [pagamentosArea, setPagamentosArea] = useState<PagamentoAreaRow[]>([]);
   const [pagamentosBanco, setPagamentosBanco] = useState<PagamentoBancoRow[]>([]);
   const [saldosBanco, setSaldosBanco] = useState<SaldoBancoRow[]>([]);
   const [receitas, setReceitas] = useState<ReceitaRow[]>([]);
+  const [extratoAplicacao, setExtratoAplicacao] = useState<ExtratoAplicacao | null>(null);
 
   const [areasSelecionadas, setAreasSelecionadas] = useState<string[]>([]);
   const [bancosSelecionados, setBancosSelecionados] = useState<string[]>([]);
@@ -349,6 +353,27 @@ const PagamentosPage: React.FC = () => {
     };
 
     carregarDados();
+  }, [periodoInicio, periodoFim]);
+
+  useEffect(() => {
+    const carregarAplicacao = async () => {
+      if (!periodoInicio || !periodoFim) return;
+      try {
+        setCarregandoAplicacao(true);
+        setErroAplicacao(null);
+        const supabase = getSupabaseClient();
+        const extrato = await carregarExtratoAplicacao(supabase, periodoInicio, periodoFim);
+        setExtratoAplicacao(extrato);
+      } catch (error) {
+        console.error('Erro ao carregar saldo de aplicação:', error);
+        setErroAplicacao('Não foi possível consolidar o saldo de aplicação para o período.');
+        setExtratoAplicacao(null);
+      } finally {
+        setCarregandoAplicacao(false);
+      }
+    };
+
+    void carregarAplicacao();
   }, [periodoInicio, periodoFim]);
 
   const intervaloDatas = useMemo(
@@ -511,31 +536,11 @@ const PagamentosPage: React.FC = () => {
   }, [saldosBanco]);
 
   const movimentacaoAplicacao = useMemo(() => {
-    const filtroAplicacao = (texto: string | undefined | null) => {
-      if (!texto) return false;
-      const normalizado = texto.toLowerCase();
-      return normalizado.includes('aplica') || normalizado.includes('invest');
-    };
-
-    const aplicacao = pagamentosArea.reduce((acc, item) => {
-      const nome = extrairRelacao(item.are_areas)?.are_nome;
-      if (filtroAplicacao(nome)) {
-        return acc + Number(item.pag_valor ?? 0);
-      }
-      return acc;
-    }, 0);
-
-    const resgate = receitas.reduce((acc, item) => {
-      const conta = extrairRelacao(item.ctr_contas_receita)?.ctr_nome;
-      if (filtroAplicacao(conta)) {
-        return acc + Number(item.rec_valor ?? 0);
-      }
-      return acc;
-    }, 0);
-
+    const aplicacao = extratoAplicacao?.totalAplicacoes ?? 0;
+    const resgate = extratoAplicacao?.totalResgates ?? 0;
     const subtotal = aplicacao - resgate;
-    const saldoInicial = somaSaldos.get(periodoInicio) ?? 0;
-    const saldoFinal = somaSaldos.get(periodoFim) ?? saldoInicial + subtotal;
+    const saldoInicial = extratoAplicacao?.saldoInicial ?? 0;
+    const saldoFinal = extratoAplicacao?.saldoFinal ?? saldoInicial - aplicacao + resgate;
 
     return {
       aplicacao,
@@ -544,7 +549,7 @@ const PagamentosPage: React.FC = () => {
       saldoInicial,
       saldoFinal,
     };
-  }, [pagamentosArea, receitas, somaSaldos, periodoInicio, periodoFim]);
+  }, [extratoAplicacao]);
 
   const totalPagamentosPeriodo = useMemo(() => resumoAreas.total, [resumoAreas]);
   const totalPorBanco = useMemo(() => resumoBancos.total, [resumoBancos]);
@@ -652,49 +657,57 @@ const PagamentosPage: React.FC = () => {
                 subtitle="Resumo das aplicações e resgates no período"
                 variant="primary"
               >
-                <div className="grid gap-4 text-sm text-gray-700 md:grid-cols-2">
-                  <div className="space-y-2 rounded-lg border border-gray-200 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                      Movimentação no período selecionado
-                    </p>
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium text-gray-600">Aplicação realizada</span>
-                      <span className="font-semibold text-success-600">
-                        {formatCurrency(movimentacaoAplicacao.aplicacao)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium text-gray-600">Resgate aplicação</span>
-                      <span className="font-semibold text-error-600">
-                        {formatCurrency(movimentacaoAplicacao.resgate)}
-                      </span>
-                    </div>
-                    <div className="mt-3 rounded-lg bg-error-50 px-3 py-2 text-right font-semibold text-error-600">
-                      Valor movimentado (subtotal): {formatCurrency(movimentacaoAplicacao.subtotal)}
-                    </div>
+                {carregandoAplicacao ? (
+                  <div className="py-6">
+                    <Loading text="Calculando saldo de aplicação..." />
                   </div>
+                ) : erroAplicacao ? (
+                  <p className="text-sm text-error-700">{erroAplicacao}</p>
+                ) : (
+                  <div className="grid gap-4 text-sm text-gray-700 md:grid-cols-2">
+                    <div className="space-y-2 rounded-lg border border-gray-200 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Movimentação no período selecionado
+                      </p>
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-gray-600">Aplicação realizada</span>
+                        <span className="font-semibold text-success-600">
+                          {formatCurrency(movimentacaoAplicacao.aplicacao)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-gray-600">Resgate aplicação</span>
+                        <span className="font-semibold text-error-600">
+                          {formatCurrency(movimentacaoAplicacao.resgate)}
+                        </span>
+                      </div>
+                      <div className="mt-3 rounded-lg bg-error-50 px-3 py-2 text-right font-semibold text-error-600">
+                        Valor movimentado (subtotal): {formatCurrency(movimentacaoAplicacao.subtotal)}
+                      </div>
+                    </div>
 
-                  <div className="space-y-2 rounded-lg border border-gray-200 p-4">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                      Saldo de aplicação ao final do período
-                    </p>
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium text-gray-600">Saldo inicial</span>
-                      <span className="font-semibold text-gray-800">
-                        {formatCurrency(movimentacaoAplicacao.saldoInicial)}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium text-gray-600">Valor movimentado</span>
-                      <span className="font-semibold text-error-600">
-                        {formatCurrency(movimentacaoAplicacao.subtotal)}
-                      </span>
-                    </div>
-                    <div className="mt-3 rounded-lg bg-success-50 px-3 py-2 text-right font-semibold text-success-600">
-                      Saldo final: {formatCurrency(movimentacaoAplicacao.saldoFinal)}
+                    <div className="space-y-2 rounded-lg border border-gray-200 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                        Saldo de aplicação ao final do período
+                      </p>
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-gray-600">Saldo inicial</span>
+                        <span className="font-semibold text-gray-800">
+                          {formatCurrency(movimentacaoAplicacao.saldoInicial)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium text-gray-600">Valor movimentado</span>
+                        <span className="font-semibold text-error-600">
+                          {formatCurrency(movimentacaoAplicacao.subtotal)}
+                        </span>
+                      </div>
+                      <div className="mt-3 rounded-lg bg-success-50 px-3 py-2 text-right font-semibold text-success-600">
+                        Saldo final: {formatCurrency(movimentacaoAplicacao.saldoFinal)}
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
               </Card>
 
               <Card

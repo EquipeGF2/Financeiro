@@ -181,6 +181,20 @@ const navigationSections: NavSection[] = [
           </svg>
         ),
       },
+      {
+        label: 'Saldo de Aplicação',
+        href: '/relatorios/aplicacao',
+        icon: (
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 8c-1.657 0-3 1.343-3 3s1.343 3 3 3 3-1.343 3-3-1.343-3-3-3zm0 0V4m0 14v-4m6-2h2m-16 0h2"
+            />
+          </svg>
+        ),
+      },
     ],
   },
   {
