@@ -87,6 +87,15 @@ const normalizarNome = (valor: unknown, fallback: string): string => {
   return fallback;
 };
 
+const normalizarComparacao = (texto: string): string =>
+  texto
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .trim();
+
+const AREAS_EXCLUIDAS = ['TRANSFERENCIA APLICACAO'];
+
 const extrairRelacao = <T,>(valor: T | T[] | null | undefined): T | null => {
   if (!valor) {
     return null;
@@ -136,9 +145,9 @@ const SimpleLineChart: React.FC<{
   series: SerieLinha[];
   legenda?: boolean;
 }> = ({ labels, series, legenda = true }) => {
-  const width = 900;
+  const width = Math.max(900, labels.length * 80);
   const height = 360;
-  const paddingX = 48;
+  const paddingX = 36;
   const paddingY = 32;
   const passoX = labels.length > 1 ? (width - paddingX * 2) / (labels.length - 1) : 0;
   const valores = series.flatMap((serie) => serie.values);
@@ -168,8 +177,12 @@ const SimpleLineChart: React.FC<{
   const numPassosY = maxValorArredondado > 0 ? Math.floor(maxValorArredondado / intervaloY) + 1 : 1;
 
   return (
-    <div className="space-y-3 w-full">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-80 w-full max-w-full">
+    <div className="space-y-3 w-full overflow-x-auto">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="h-80"
+        style={{ minWidth: `${width}px` }}
+      >
         <line
           x1={paddingX}
           y1={height - paddingY}
@@ -381,9 +394,18 @@ const PagamentosPage: React.FC = () => {
     [periodoInicio, periodoFim],
   );
 
+  const pagamentosAreaFiltrados = useMemo(() => {
+    return pagamentosArea.filter((item) => {
+      const relacao = extrairRelacao(item.are_areas);
+      const nome = normalizarNome(relacao?.are_nome, 'Área não informada');
+      const chaveComparacao = normalizarComparacao(nome);
+      return !AREAS_EXCLUIDAS.some((area) => area === chaveComparacao);
+    });
+  }, [pagamentosArea]);
+
   const resumoAreas = useMemo(() => {
     const mapa = new Map<string, number>();
-    pagamentosArea.forEach((item) => {
+    pagamentosAreaFiltrados.forEach((item) => {
       const relacao = extrairRelacao(item.are_areas);
       const nome = normalizarNome(relacao?.are_nome, 'Área não informada');
       const valor = Number(item.pag_valor ?? 0);
@@ -394,7 +416,7 @@ const PagamentosPage: React.FC = () => {
       .sort((a, b) => b.valor - a.valor);
     const total = itens.reduce((acc, item) => acc + item.valor, 0);
     return { itens, total };
-  }, [pagamentosArea]);
+  }, [pagamentosAreaFiltrados]);
 
   const resumoBancos = useMemo(() => {
     const mapa = new Map<string, number>();
@@ -424,9 +446,18 @@ const PagamentosPage: React.FC = () => {
     return mapa;
   }, [saldosBanco]);
 
+  const datasComSaldo = useMemo(() => {
+    return intervaloDatas.filter((data) => {
+      const mapaDia = mapaSaldosPorData.get(data);
+      if (!mapaDia) return false;
+      const totalDia = Array.from(mapaDia.values()).reduce((acc, valor) => acc + valor, 0);
+      return totalDia !== 0;
+    });
+  }, [intervaloDatas, mapaSaldosPorData]);
+
   const mapaPagamentosPorData = useMemo(() => {
     const mapa = new Map<string, Map<string, number>>();
-    pagamentosArea.forEach((item) => {
+    pagamentosAreaFiltrados.forEach((item) => {
       const relacao = extrairRelacao(item.are_areas);
       const nome = normalizarNome(relacao?.are_nome, 'Área não informada');
       const valor = Number(item.pag_valor ?? 0);
@@ -435,7 +466,26 @@ const PagamentosPage: React.FC = () => {
       mapa.set(item.pag_data, mapaDia);
     });
     return mapa;
-  }, [pagamentosArea]);
+  }, [pagamentosAreaFiltrados]);
+
+  const datasComMovimentoArea = useMemo(() => {
+    return intervaloDatas.filter((data) => {
+      const mapaDia = mapaPagamentosPorData.get(data);
+      if (!mapaDia) return false;
+      const totalDia = Array.from(mapaDia.values()).reduce((acc, valor) => acc + valor, 0);
+      return totalDia !== 0;
+    });
+  }, [intervaloDatas, mapaPagamentosPorData]);
+
+  const labelsAreas = useMemo(
+    () => datasComMovimentoArea.map((data) => formatarDataCurta(data)),
+    [datasComMovimentoArea],
+  );
+
+  const labelsBancos = useMemo(
+    () => datasComSaldo.map((data) => formatarDataCurta(data)),
+    [datasComSaldo],
+  );
 
   const chavesAreas = useMemo(() => resumoAreas.itens.map((item) => item.nome), [resumoAreas]);
   const chavesBancos = useMemo(() => resumoBancos.itens.map((item) => item.nome), [resumoBancos]);
@@ -505,26 +555,28 @@ const PagamentosPage: React.FC = () => {
   }, [resumoBancos]);
 
   const linhasAreas: SerieLinha[] = useMemo(() => {
+    if (!datasComMovimentoArea.length) return [];
     return areasSelecionadas.map((area) => {
       const color = areaCores.get(area) ?? coresPadrao[0];
-      const values = intervaloDatas.map((data) => {
+      const values = datasComMovimentoArea.map((data) => {
         const mapaDia = mapaPagamentosPorData.get(data);
         return Number((mapaDia?.get(area) ?? 0).toFixed(2));
       });
       return { name: area, values, color };
     });
-  }, [areasSelecionadas, areaCores, intervaloDatas, mapaPagamentosPorData]);
+  }, [areasSelecionadas, areaCores, datasComMovimentoArea, mapaPagamentosPorData]);
 
   const linhasBancos: SerieLinha[] = useMemo(() => {
+    if (!datasComSaldo.length) return [];
     return bancosSelecionados.map((banco) => {
       const color = bancoCores.get(banco) ?? coresPadrao[0];
-      const values = intervaloDatas.map((data) => {
+      const values = datasComSaldo.map((data) => {
         const mapaDia = mapaSaldosPorData.get(data);
         return Number((mapaDia?.get(banco) ?? 0).toFixed(2));
       });
       return { name: banco, values, color };
     });
-  }, [bancosSelecionados, bancoCores, intervaloDatas, mapaSaldosPorData]);
+  }, [bancosSelecionados, bancoCores, datasComSaldo, mapaSaldosPorData]);
 
   const somaSaldos = useMemo(() => {
     const mapa = new Map<string, number>();
@@ -851,13 +903,13 @@ const PagamentosPage: React.FC = () => {
                       </Button>
                     ))}
                   </div>
-                  {linhasBancos.length === 0 ? (
+                  {linhasBancos.length === 0 || labelsBancos.length === 0 ? (
                     <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
                       Selecione ao menos um banco para visualizar a evolução dos saldos.
                     </div>
                   ) : (
                     <SimpleLineChart
-                      labels={intervaloDatas.map((data) => formatarDataCurta(data))}
+                      labels={labelsBancos}
                       series={linhasBancos}
                     />
                   )}
@@ -892,14 +944,14 @@ const PagamentosPage: React.FC = () => {
                         </Button>
                       ))}
                     </div>
-                    {linhasAreas.length === 0 ? (
+                    {linhasAreas.length === 0 || labelsAreas.length === 0 ? (
                       <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
                         Selecione ao menos uma área para visualizar a evolução diária.
                       </div>
                     ) : (
                       <div className="w-full">
                         <SimpleLineChart
-                          labels={intervaloDatas.map((data) => formatarDataCurta(data))}
+                          labels={labelsAreas}
                           series={linhasAreas}
                         />
                       </div>
