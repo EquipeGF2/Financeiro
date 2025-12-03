@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Header } from '@/components/layout';
 import { Button, Card, Input, Loading } from '@/components/ui';
@@ -58,6 +58,21 @@ const coresPadrao = [
 ];
 
 const toISODate = (date: Date): string => date.toISOString().split('T')[0];
+
+const formatarMoedaCompacta = (valor: number): string => {
+  const absoluto = Math.abs(valor);
+  if (absoluto >= 1_000_000) {
+    const base = valor / 1_000_000;
+    const casas = absoluto >= 10_000_000 ? 0 : 1;
+    return `R$ ${base.toFixed(casas)}M`;
+  }
+  if (absoluto >= 1_000) {
+    const base = valor / 1_000;
+    const casas = absoluto >= 100_000 ? 0 : 1;
+    return `R$ ${base.toFixed(casas)}k`;
+  }
+  return formatCurrency(valor);
+};
 
 const gerarIntervaloDatas = (inicio: string, fim: string): string[] => {
   if (!inicio) {
@@ -144,8 +159,49 @@ const SimpleLineChart: React.FC<{
   labels: string[];
   series: SerieLinha[];
   legenda?: boolean;
-}> = ({ labels, series, legenda = true }) => {
-  const width = 900;
+  yLabelFormatter?: (valor: number) => string;
+}> = ({ labels, series, legenda = true, yLabelFormatter = formatCurrency }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [chartWidth, setChartWidth] = useState(900);
+  const [chartPixelSize, setChartPixelSize] = useState({ width: 900, height: 320 });
+  const [pontoAtivo, setPontoAtivo] = useState<{
+    x: number;
+    y: number;
+    label: string;
+    valor: number;
+    serie: string;
+    cor: string;
+  } | null>(null);
+
+  useEffect(() => {
+    const elemento = containerRef.current;
+    if (!elemento) return;
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      setChartWidth(Math.max(entry.contentRect.width, 320));
+    });
+
+    observer.observe(elemento);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!svgRef.current) return;
+    const atualizarTamanho = () => {
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (rect) {
+        setChartPixelSize({ width: rect.width, height: rect.height });
+      }
+    };
+    atualizarTamanho();
+    const observer = new ResizeObserver(atualizarTamanho);
+    observer.observe(svgRef.current);
+    return () => observer.disconnect();
+  }, [chartWidth]);
+
+  const width = chartWidth;
   const height = 360;
   const paddingX = 64;
   const paddingY = 32;
@@ -178,13 +234,23 @@ const SimpleLineChart: React.FC<{
   const intervaloY = determinarIntervaloY(maxValorArredondado);
   const numPassosY = maxValorArredondado > 0 ? Math.floor(maxValorArredondado / intervaloY) + 1 : 1;
 
+  const posicaoTooltip = pontoAtivo
+    ? {
+        left: (pontoAtivo.x / width) * chartPixelSize.width,
+        top: (pontoAtivo.y / height) * chartPixelSize.height,
+      }
+    : null;
+
   return (
-    <div className="space-y-3 w-full">
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        className="h-80 w-full max-w-full"
-        preserveAspectRatio="xMinYMin meet"
-      >
+    <div className="w-full space-y-3" ref={containerRef}>
+      <div className="relative">
+        <svg
+          ref={svgRef}
+          viewBox={`0 0 ${width} ${height}`}
+          className="h-80 w-full max-w-full"
+          preserveAspectRatio="xMinYMin meet"
+          onMouseLeave={() => setPontoAtivo(null)}
+        >
         <line
           x1={paddingX}
           y1={height - paddingY}
@@ -222,7 +288,7 @@ const SimpleLineChart: React.FC<{
                 textAnchor="end"
                 className="text-[13px] fill-gray-600 font-medium"
               >
-                {formatCurrency(valor)}
+                {yLabelFormatter(valor)}
               </text>
             </g>
           );
@@ -255,6 +321,16 @@ const SimpleLineChart: React.FC<{
                     fill={serie.color}
                     stroke="#ffffff"
                     strokeWidth={1.5}
+                    onMouseEnter={() =>
+                      setPontoAtivo({
+                        x,
+                        y,
+                        valor,
+                        label: labels[index],
+                        serie: serie.name,
+                        cor: serie.color,
+                      })
+                    }
                   />
                 );
               })}
@@ -279,7 +355,28 @@ const SimpleLineChart: React.FC<{
             </text>
           );
         })}
-      </svg>
+        </svg>
+
+        {pontoAtivo && posicaoTooltip && (
+          <div
+            className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs shadow-lg"
+            style={{
+              left: `${posicaoTooltip.left}px`,
+              top: `${Math.max(posicaoTooltip.top - 12, 8)}px`,
+            }}
+          >
+            <div className="mb-1 flex items-center gap-2">
+              <span
+                className="inline-block h-2 w-2 rounded-full"
+                style={{ backgroundColor: pontoAtivo.cor }}
+              />
+              <span className="font-semibold text-gray-800">{pontoAtivo.serie}</span>
+            </div>
+            <div className="text-gray-600">{pontoAtivo.label}</div>
+            <div className="font-semibold text-gray-900">{yLabelFormatter(pontoAtivo.valor)}</div>
+          </div>
+        )}
+      </div>
       {legenda && (
         <div className="flex flex-wrap gap-3">
           {series.map((serie) => (
@@ -420,8 +517,8 @@ const PagamentosPage: React.FC = () => {
     pagamentosAreaFiltrados.forEach((item) => {
       const relacao = extrairRelacao(item.are_areas);
       const nome = normalizarNome(relacao?.are_nome, 'Área não informada');
-      const valor = Number(item.pag_valor ?? 0);
-      mapa.set(nome, (mapa.get(nome) ?? 0) + valor);
+      const valor = Number(Number(item.pag_valor ?? 0).toFixed(2));
+      mapa.set(nome, Number(((mapa.get(nome) ?? 0) + valor).toFixed(2)));
     });
     const itens = Array.from(mapa.entries())
       .map(([nome, valor]) => ({ nome, valor }))
@@ -435,8 +532,8 @@ const PagamentosPage: React.FC = () => {
     pagamentosBanco.forEach((item) => {
       const relacao = extrairRelacao(item.ban_bancos);
       const nome = normalizarNome(relacao?.ban_nome, 'Banco não informado');
-      const valor = Number(item.pbk_valor ?? 0);
-      mapa.set(nome, (mapa.get(nome) ?? 0) + valor);
+      const valor = Number(Number(item.pbk_valor ?? 0).toFixed(2));
+      mapa.set(nome, Number(((mapa.get(nome) ?? 0) + valor).toFixed(2)));
     });
     const itens = Array.from(mapa.entries())
       .map(([nome, valor]) => ({ nome, valor }))
@@ -562,13 +659,22 @@ const PagamentosPage: React.FC = () => {
     });
   }, [bancosSelecionados, bancoCores, intervaloDatas, mapaSaldosPorData]);
 
-  const somaSaldos = useMemo(() => {
-    const mapa = new Map<string, number>();
+  const saldoBancarioFinal = useMemo(() => {
+    if (!saldosBanco.length) return 0;
+
+    const ultimoSaldoPorBanco = new Map<string, { data: string; valor: number }>();
     saldosBanco.forEach((item) => {
-      const totalAtual = mapa.get(item.sdb_data) ?? 0;
-      mapa.set(item.sdb_data, totalAtual + Number(item.sdb_saldo ?? 0));
+      const relacao = extrairRelacao(item.ban_bancos);
+      const nome = normalizarNome(relacao?.ban_nome, 'Banco não informado');
+      const dataAtual = ultimoSaldoPorBanco.get(nome)?.data;
+      const valor = Number(Number(item.sdb_saldo ?? 0).toFixed(2));
+
+      if (!dataAtual || item.sdb_data > dataAtual) {
+        ultimoSaldoPorBanco.set(nome, { data: item.sdb_data, valor });
+      }
     });
-    return mapa;
+
+    return Array.from(ultimoSaldoPorBanco.values()).reduce((total, item) => total + item.valor, 0);
   }, [saldosBanco]);
 
   const movimentacaoAplicacao = useMemo(() => {
@@ -696,7 +802,7 @@ const PagamentosPage: React.FC = () => {
                   Diferença entre aplicações e resgates associados às áreas de investimento.
                 </p>
               </Card>
-              <Card title="Saldo Bancário Final" subtitle={formatCurrency(movimentacaoAplicacao.saldoFinal)}>
+              <Card title="Saldo Bancário Final" subtitle={formatCurrency(saldoBancarioFinal)}>
                 <p className="text-sm text-gray-600">
                   Comparativo entre saldos de abertura e fechamento do período avaliado.
                 </p>
@@ -903,7 +1009,7 @@ const PagamentosPage: React.FC = () => {
                       </Button>
                     ))}
                   </div>
-                  {linhasBancos.length === 0 || intervaloDatas.length === 0 ? (
+                    {linhasBancos.length === 0 || intervaloDatas.length === 0 ? (
                     <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
                       Selecione ao menos um banco para visualizar a evolução dos saldos.
                     </div>
@@ -911,6 +1017,7 @@ const PagamentosPage: React.FC = () => {
                     <SimpleLineChart
                       labels={intervaloDatas.map((data) => formatarDataCurta(data))}
                       series={linhasBancos}
+                      yLabelFormatter={formatarMoedaCompacta}
                     />
                   )}
                 </div>

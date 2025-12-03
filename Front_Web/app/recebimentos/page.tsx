@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import { Header } from '@/components/layout';
-import { Card, Loading } from '@/components/ui';
+import { Button, Card, Loading } from '@/components/ui';
 import { getSupabaseClient } from '@/lib/supabaseClient';
 import { formatCurrency } from '@/lib/mathParser';
 
@@ -43,6 +43,9 @@ export default function RecebimentosPage() {
   const [receitas, setReceitas] = useState<ReceitaDetalhada[]>([]);
   const [periodoInicio, setPeriodoInicio] = useState('');
   const [periodoFim, setPeriodoFim] = useState('');
+  const [filtroInicio, setFiltroInicio] = useState('');
+  const [filtroFim, setFiltroFim] = useState('');
+  const [filtroTipo, setFiltroTipo] = useState<'todos' | 'titulos' | 'depositos'>('todos');
 
   useEffect(() => {
     // Define período padrão: mês atual
@@ -51,8 +54,13 @@ export default function RecebimentosPage() {
     const fimMes = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
 
     const formatarData = (d: Date) => d.toISOString().split('T')[0];
-    setPeriodoInicio(formatarData(inicioMes));
-    setPeriodoFim(formatarData(fimMes));
+    const inicio = formatarData(inicioMes);
+    const fim = formatarData(fimMes);
+
+    setPeriodoInicio(inicio);
+    setPeriodoFim(fim);
+    setFiltroInicio(inicio);
+    setFiltroFim(fim);
   }, []);
 
   useEffect(() => {
@@ -62,9 +70,6 @@ export default function RecebimentosPage() {
       setCarregando(true);
       try {
         const supabase = getSupabaseClient();
-
-        console.log('=== DEBUG Recebimentos ===');
-        console.log('Período:', periodoInicio, 'até', periodoFim);
 
         const { data, error } = await supabase
           .from('rec_receitas')
@@ -83,9 +88,6 @@ export default function RecebimentosPage() {
           .gte('rec_data', periodoInicio)
           .lte('rec_data', periodoFim)
           .order('rec_data', { ascending: false });
-
-        console.log('Dados retornados:', data);
-        console.log('Quantidade:', data?.length || 0);
         if (error) {
           console.error('Erro ao buscar:', error);
           throw error;
@@ -134,8 +136,6 @@ export default function RecebimentosPage() {
             } : null
           };
         });
-
-        console.log('Receitas formatadas:', receitasFormatadas);
         setReceitas(receitasFormatadas);
       } catch (erro) {
         console.error('Erro ao carregar receitas:', erro);
@@ -147,15 +147,50 @@ export default function RecebimentosPage() {
     carregarReceitas();
   }, [periodoInicio, periodoFim]);
 
+  const aplicarPeriodo = () => {
+    if (!filtroInicio) return;
+    setPeriodoInicio(filtroInicio);
+    setPeriodoFim(filtroFim || filtroInicio);
+  };
+
+  const normalizarTexto = (valor?: string | null) =>
+    valor?.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase() ?? '';
+
+  const receitasFiltradas = useMemo(() => {
+    return receitas.filter((rec) => {
+      const nomeConta = normalizarTexto(rec.conta_receita?.ctr_nome);
+      const codigoConta = rec.conta_receita?.ctr_codigo ?? '';
+
+      if (filtroTipo === 'titulos') {
+        return (
+          nomeConta.includes('titulo') ||
+          nomeConta.includes('título') ||
+          nomeConta.includes('boleto') ||
+          codigoConta.startsWith('301')
+        );
+      }
+      if (filtroTipo === 'depositos') {
+        return (
+          nomeConta.includes('deposito') ||
+          nomeConta.includes('deposito') ||
+          nomeConta.includes('pix') ||
+          nomeConta.includes('transferencia') ||
+          codigoConta.startsWith('302')
+        );
+      }
+      return true;
+    });
+  }, [filtroTipo, receitas]);
+
   const totalGeral = useMemo(() => {
-    return receitas.reduce((sum, r) => sum + r.rec_valor, 0);
-  }, [receitas]);
+    return receitasFiltradas.reduce((sum, r) => sum + r.rec_valor, 0);
+  }, [receitasFiltradas]);
 
   // Cards de resumo por categoria
   const resumoCategorias = useMemo((): ResumoCategoria[] => {
     const categorias = new Map<string, number>();
 
-    receitas.forEach(rec => {
+    receitasFiltradas.forEach(rec => {
       const conta = rec.conta_receita?.ctr_codigo || '';
 
       // Classificar por código de conta de receita
@@ -177,13 +212,13 @@ export default function RecebimentosPage() {
       total,
       percentual: totalGeral > 0 ? (total / totalGeral) * 100 : 0
     }));
-  }, [receitas, totalGeral]);
+  }, [receitasFiltradas, totalGeral]);
 
   // Dados para gráfico evolução por banco
   const dadosGraficoBancos = useMemo((): DadosGrafico[] => {
     const mapa = new Map<string, number>();
 
-    receitas.forEach(rec => {
+    receitasFiltradas.forEach(rec => {
       const banco = rec.banco?.ban_nome || 'Sem banco';
       mapa.set(banco, (mapa.get(banco) || 0) + rec.rec_valor);
     });
@@ -191,13 +226,13 @@ export default function RecebimentosPage() {
     return Array.from(mapa.entries())
       .map(([nome, valor]) => ({ nome, valor }))
       .sort((a, b) => b.valor - a.valor);
-  }, [receitas]);
+  }, [receitasFiltradas]);
 
   // Dados para gráfico por tipo de conta
   const dadosGraficoContas = useMemo((): DadosGrafico[] => {
     const mapa = new Map<string, number>();
 
-    receitas.forEach(rec => {
+    receitasFiltradas.forEach(rec => {
       const conta = rec.conta_receita?.ctr_nome || 'Sem conta';
       mapa.set(conta, (mapa.get(conta) || 0) + rec.rec_valor);
     });
@@ -205,7 +240,14 @@ export default function RecebimentosPage() {
     return Array.from(mapa.entries())
       .map(([nome, valor]) => ({ nome, valor }))
       .sort((a, b) => b.valor - a.valor);
-  }, [receitas]);
+  }, [receitasFiltradas]);
+
+  const dadosPorTipo = useMemo((): DadosGrafico[] => {
+    return resumoCategorias
+      .filter((cat) => cat.categoria !== 'Outros')
+      .map((cat) => ({ nome: cat.categoria, valor: cat.total }))
+      .sort((a, b) => b.valor - a.valor);
+  }, [resumoCategorias]);
 
   // Dados para gráfico por tipo de receita (temporariamente desabilitado)
   // const dadosGraficoTipos = useMemo((): DadosGrafico[] => {
@@ -222,6 +264,7 @@ export default function RecebimentosPage() {
   // }, [receitas]);
 
   const formatarData = (data: string) => {
+    if (!data) return '-';
     const [ano, mes, dia] = data.split('-');
     return `${dia}/${mes}/${ano}`;
   };
@@ -248,7 +291,7 @@ export default function RecebimentosPage() {
                   />
                 </div>
                 <div className="text-xs text-gray-500 text-right">
-                  {((item.valor / totalGeral) * 100).toFixed(1)}% do total
+                  {(totalGeral > 0 ? (item.valor / totalGeral) * 100 : 0).toFixed(1)}% do total
                 </div>
               </div>
             ))
@@ -268,15 +311,15 @@ export default function RecebimentosPage() {
       <div className="page-content space-y-6">
         {/* Filtros de período */}
         <Card title="Período de Análise">
-          <div className="flex flex-wrap gap-4 items-end">
+          <div className="flex flex-wrap items-end gap-4">
             <div>
               <label className="text-sm font-medium text-gray-700 block mb-1">
                 Data Início
               </label>
               <input
                 type="date"
-                value={periodoInicio}
-                onChange={(e) => setPeriodoInicio(e.target.value)}
+                value={filtroInicio}
+                onChange={(e) => setFiltroInicio(e.target.value)}
                 className="rounded-md border border-gray-300 px-3 py-2 text-sm"
               />
             </div>
@@ -286,10 +329,35 @@ export default function RecebimentosPage() {
               </label>
               <input
                 type="date"
-                value={periodoFim}
-                onChange={(e) => setPeriodoFim(e.target.value)}
+                value={filtroFim}
+                min={filtroInicio}
+                onChange={(e) => setFiltroFim(e.target.value)}
                 className="rounded-md border border-gray-300 px-3 py-2 text-sm"
               />
+            </div>
+            <Button variant="primary" onClick={aplicarPeriodo} disabled={!filtroInicio}>
+              Aplicar período
+            </Button>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            <p className="text-sm font-medium text-gray-700">Filtrar por tipo de recebimento</p>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { chave: 'todos', rotulo: 'Todos' },
+                { chave: 'titulos', rotulo: 'Títulos' },
+                { chave: 'depositos', rotulo: 'Depósitos' },
+              ].map((opcao) => (
+                <Button
+                  key={opcao.chave}
+                  size="sm"
+                  variant={filtroTipo === opcao.chave ? 'primary' : 'ghost'}
+                  onClick={() => setFiltroTipo(opcao.chave as typeof filtroTipo)}
+                  className="whitespace-nowrap"
+                >
+                  {opcao.rotulo}
+                </Button>
+              ))}
             </div>
           </div>
         </Card>
@@ -303,91 +371,57 @@ export default function RecebimentosPage() {
         ) : (
           <>
             {/* Cards de Resumo */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {/* Total Geral */}
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <Card>
                 <div className="space-y-2">
                   <h3 className="text-sm font-medium text-gray-600">Total de Recebimentos</h3>
                   <p className="text-3xl font-bold text-success-700">{formatCurrency(totalGeral)}</p>
-                  <p className="text-xs text-gray-500">{receitas.length} recebimento(s)</p>
+                  <p className="text-xs text-gray-500">{receitasFiltradas.length} recebimento(s)</p>
                 </div>
               </Card>
 
-              {/* Cards por Categoria */}
-              {resumoCategorias.map((cat, idx) => (
-                <Card key={idx}>
-                  <div className="space-y-2">
-                    <h3 className="text-sm font-medium text-gray-600">{cat.categoria}</h3>
-                    <p className="text-2xl font-bold text-gray-900">{formatCurrency(cat.total)}</p>
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-success-500"
-                          style={{ width: `${cat.percentual}%` }}
-                        />
-                      </div>
-                      <span className="text-sm font-semibold text-success-700">
-                        {cat.percentual.toFixed(1)}%
-                      </span>
-                    </div>
-                  </div>
-                </Card>
-              ))}
+              <Card>
+                <div className="space-y-2">
+                  <h3 className="text-sm font-medium text-gray-600">Filtro de tipo</h3>
+                  <p className="text-xl font-semibold text-gray-900 capitalize">
+                    {filtroTipo === 'todos' ? 'Todos os tipos' : filtroTipo === 'titulos' ? 'Títulos' : 'Depósitos'}
+                  </p>
+                  <p className="text-xs text-gray-500">Período: {formatarData(periodoInicio)} a {formatarData(periodoFim)}</p>
+                </div>
+              </Card>
+
+              <Card>
+                <div className="space-y-2">
+                  <h3 className="text-sm font-medium text-gray-600">Bancos com recebimentos</h3>
+                  <p className="text-2xl font-bold text-gray-900">{dadosGraficoBancos.length}</p>
+                  <p className="text-xs text-gray-500">
+                    Maior volume: {dadosGraficoBancos[0] ? dadosGraficoBancos[0].nome : 'Sem dados'}
+                  </p>
+                </div>
+              </Card>
             </div>
 
-            {/* Gráficos */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {renderGraficoBarras(dadosGraficoBancos, 'Recebimentos por Banco')}
+            <Card title="Recebimentos por Banco">
+              {dadosGraficoBancos.length === 0 ? (
+                <p className="py-4 text-center text-gray-500">Nenhum recebimento encontrado para os bancos.</p>
+              ) : (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {dadosGraficoBancos.map((banco) => (
+                    <Card key={banco.nome}>
+                      <div className="space-y-2">
+                        <p className="text-sm font-semibold text-gray-700">{banco.nome}</p>
+                        <p className="text-xl font-bold text-success-700">{formatCurrency(banco.valor)}</p>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              {renderGraficoBarras(dadosPorTipo, 'Recebimentos por Tipo')}
               {renderGraficoBarras(dadosGraficoContas, 'Recebimentos por Conta')}
             </div>
-
-            {/* {renderGraficoBarras(dadosGraficoTipos, 'Recebimentos por Tipo de Receita')} */}
-
-            {/* Lista Detalhada */}
-            <Card title="Lista Completa de Recebimentos">
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left font-semibold text-gray-600">Data</th>
-                      <th className="px-4 py-3 text-left font-semibold text-gray-600">Tipo</th>
-                      <th className="px-4 py-3 text-left font-semibold text-gray-600">Conta</th>
-                      <th className="px-4 py-3 text-left font-semibold text-gray-600">Banco</th>
-                      <th className="px-4 py-3 text-right font-semibold text-gray-600">Valor</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 bg-white">
-                    {receitas.length === 0 ? (
-                      <tr>
-                        <td colSpan={5} className="px-4 py-6 text-center text-gray-500">
-                          Nenhuma receita encontrada no período selecionado
-                        </td>
-                      </tr>
-                    ) : (
-                      receitas.map((rec) => (
-                        <tr key={rec.rec_id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 text-gray-900">
-                            {formatarData(rec.rec_data)}
-                          </td>
-                          <td className="px-4 py-3 text-gray-700">
-                            {rec.tipo_receita?.tpr_nome || '-'}
-                          </td>
-                          <td className="px-4 py-3 text-gray-700">
-                            {rec.conta_receita?.ctr_nome || '-'}
-                          </td>
-                          <td className="px-4 py-3 text-gray-700">
-                            {rec.banco?.ban_nome || '-'}
-                          </td>
-                          <td className="px-4 py-3 text-right font-semibold text-success-700">
-                            {formatCurrency(rec.rec_valor)}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
           </>
         )}
       </div>
