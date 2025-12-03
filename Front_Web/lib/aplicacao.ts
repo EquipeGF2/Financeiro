@@ -35,34 +35,6 @@ export interface ExtratoAplicacao {
   dataBase?: string | null;
 }
 
-const removerAcentos = (valor: string) =>
-  valor
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toUpperCase();
-
-const ehMovimentacaoAplicacao = (texto?: string | null) => {
-  if (!texto) return false;
-  const normalizado = removerAcentos(texto);
-
-  // Ignora lançamentos ligados à conta de investimento, que não devem compor o saldo da aplicação
-  if (normalizado.includes('INVESTIMENTO')) return false;
-
-  return normalizado.includes('APLICACAO');
-};
-
-const ehResgate = (texto?: string | null) => {
-  if (!texto) return false;
-  const normalizado = removerAcentos(texto);
-  return normalizado.includes('RESGATE');
-};
-
-const ehTransferencia = (texto?: string | null) => {
-  if (!texto) return false;
-  const normalizado = removerAcentos(texto);
-  return normalizado.includes('TRANSFERENCIA') || normalizado.includes('TRANSF');
-};
-
 interface RegistroSaldoInicial {
   pvi_data: string;
   pvi_valor: number;
@@ -71,12 +43,15 @@ interface RegistroSaldoInicial {
 interface PagamentoAplicacao {
   pag_data: string;
   pag_valor: number;
+  pag_descricao?: string | null;
+  pag_are_id?: number | null;
   are_areas: { are_nome?: string | null } | { are_nome?: string | null }[] | null;
 }
 
 interface ReceitaAplicacao {
   rec_data: string;
   rec_valor: number;
+  rec_ctr_id?: number | null;
   ctr_contas_receita:
     | { ctr_nome?: string | null }
     | { ctr_nome?: string | null }[]
@@ -96,10 +71,10 @@ const normalizarData = (valor: unknown): string | null => {
 };
 
 export async function carregarExtratoAplicacao(
-    supabase: AnySupabaseClient,
-    inicio: string,
-    fim: string,
-  ): Promise<ExtratoAplicacao> {
+  supabase: AnySupabaseClient,
+  inicio: string,
+  fim: string,
+): Promise<ExtratoAplicacao> {
   if (!inicio || !fim) {
     throw new Error('Período inválido para consultar o saldo de aplicação.');
   }
@@ -123,20 +98,22 @@ export async function carregarExtratoAplicacao(
   const valorSaldoInicialBase = normalizarNumero(registroSaldo?.pvi_valor);
 
   // 2) Buscar movimentos de aplicação e resgate a partir da data base até o fim do período solicitado
-    const [pagamentosRes, receitasRes] = await Promise.all([
-      supabase
-        .from('pag_pagamentos_area')
-        .select('pag_data, pag_valor, are_areas(are_nome)')
-        .gte('pag_data', dataBase)
-        .lte('pag_data', fim)
-        .order('pag_data', { ascending: true }),
-      supabase
-        .from('rec_receitas')
-        .select('rec_data, rec_valor, ctr_contas_receita(ctr_nome)')
-        .gte('rec_data', dataBase)
-        .lte('rec_data', fim)
-        .order('rec_data', { ascending: true }),
-    ]);
+  const [pagamentosRes, receitasRes] = await Promise.all([
+    supabase
+      .from('pag_pagamentos_area')
+      .select('pag_data, pag_valor, pag_descricao, pag_are_id, are_areas(are_nome)')
+      .eq('pag_are_id', 15)
+      .gte('pag_data', dataBase)
+      .lte('pag_data', fim)
+      .order('pag_data', { ascending: true }),
+    supabase
+      .from('rec_receitas')
+      .select('rec_data, rec_valor, rec_ctr_id, ctr_contas_receita(ctr_nome)')
+      .eq('rec_ctr_id', 4)
+      .gte('rec_data', dataBase)
+      .lte('rec_data', fim)
+      .order('rec_data', { ascending: true }),
+  ]);
 
   if (pagamentosRes.error) throw pagamentosRes.error;
   if (receitasRes.error) throw receitasRes.error;
@@ -150,25 +127,23 @@ export async function carregarExtratoAplicacao(
     const dataMovimento = normalizarData(pagamento.pag_data);
     if (!dataMovimento) return;
 
+    if (pagamento.pag_are_id && pagamento.pag_are_id !== 15) return;
+
     const rel = extrairRelacao(pagamento.are_areas);
-    const nomeArea = rel?.are_nome ?? 'Aplicação';
-    if (!ehMovimentacaoAplicacao(nomeArea)) return;
+    const nomeArea = rel?.are_nome ?? 'Transferência aplicação';
+    const descricaoInformada = pagamento.pag_descricao?.trim();
+    const descricaoMovimento = descricaoInformada && descricaoInformada.length > 0
+      ? descricaoInformada
+      : nomeArea;
 
     const valor = normalizarNumero(pagamento.pag_valor);
     if (valor === 0) return;
 
-    const isResgate = ehResgate(nomeArea);
-    const isTransferencia = ehTransferencia(nomeArea);
-
     movimentos.push({
       data: dataMovimento,
-      tipo: isResgate ? 'resgate' : 'aplicacao',
-      valor: valor,
-      descricao: isResgate
-        ? 'Resgate informado em pagamentos'
-        : isTransferencia
-          ? 'Transferência para aplicação'
-          : nomeArea,
+      tipo: 'aplicacao',
+      valor,
+      descricao: descricaoMovimento,
       origem: 'pagamentos',
     });
   });
@@ -177,9 +152,10 @@ export async function carregarExtratoAplicacao(
     const dataMovimento = normalizarData(receita.rec_data);
     if (!dataMovimento) return;
 
+    if (receita.rec_ctr_id && receita.rec_ctr_id !== 4) return;
+
     const rel = extrairRelacao(receita.ctr_contas_receita);
-    const nomeConta = rel?.ctr_nome ?? 'Receita aplicação';
-    if (!ehMovimentacaoAplicacao(nomeConta)) return;
+    const nomeConta = rel?.ctr_nome ?? 'Resgate aplicação';
 
     const valor = normalizarNumero(receita.rec_valor);
     if (valor === 0) return;
