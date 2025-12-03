@@ -80,12 +80,6 @@ const formatarDataCurta = (iso: string): string => {
   return `${dia}/${mes}`;
 };
 
-const formatarDataCompleta = (iso: string): string => {
-  if (!iso) return '';
-  const [ano, mes, dia] = iso.split('-');
-  return `${dia}/${mes}/${ano}`;
-};
-
 const normalizarNome = (valor: unknown, fallback: string): string => {
   if (typeof valor === 'string' && valor.trim().length > 0) {
     return valor.trim();
@@ -557,11 +551,6 @@ const PagamentosPage: React.FC = () => {
     };
   }, [extratoAplicacao]);
 
-  const saldosDiariosAplicacao = useMemo(
-    () => extratoAplicacao?.saldosDiarios ?? [],
-    [extratoAplicacao],
-  );
-
   const totalPagamentosPeriodo = useMemo(() => resumoAreas.total, [resumoAreas]);
   const totalPorBanco = useMemo(() => resumoBancos.total, [resumoBancos]);
 
@@ -693,7 +682,13 @@ const PagamentosPage: React.FC = () => {
                             {formatCurrency(movimentacaoAplicacao.resgate)}
                           </span>
                         </div>
-                        <div className="mt-3 rounded-lg bg-error-50 px-3 py-2 text-right font-semibold text-error-600">
+                        <div
+                          className={`mt-3 rounded-lg px-3 py-2 text-right font-semibold ${
+                            movimentacaoAplicacao.subtotal >= 0
+                              ? 'bg-success-50 text-success-700'
+                              : 'bg-error-50 text-error-600'
+                          }`}
+                        >
                           Valor movimentado (subtotal): {formatCurrency(movimentacaoAplicacao.subtotal)}
                         </div>
                       </div>
@@ -710,7 +705,13 @@ const PagamentosPage: React.FC = () => {
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="font-medium text-gray-600">Valor movimentado</span>
-                          <span className="font-semibold text-error-600">
+                          <span
+                            className={`font-semibold ${
+                              movimentacaoAplicacao.subtotal >= 0
+                                ? 'text-success-700'
+                                : 'text-error-600'
+                            }`}
+                          >
                             {formatCurrency(movimentacaoAplicacao.subtotal)}
                           </span>
                         </div>
@@ -718,62 +719,6 @@ const PagamentosPage: React.FC = () => {
                           Saldo final: {formatCurrency(movimentacaoAplicacao.saldoFinal)}
                         </div>
                       </div>
-                    </div>
-
-                    <div className="rounded-lg border border-gray-200">
-                      <div className="flex items-center justify-between border-b px-4 py-3 text-xs uppercase tracking-wide text-gray-500">
-                        <span>Resumo diário da aplicação</span>
-                        <span>{saldosDiariosAplicacao.length} dia(s) com movimentação</span>
-                      </div>
-
-                      {saldosDiariosAplicacao.length === 0 ? (
-                        <div className="px-4 py-6 text-center text-sm text-gray-500">
-                          Nenhum movimento de aplicação encontrado para o período selecionado.
-                        </div>
-                      ) : (
-                        <div className="overflow-auto">
-                          <table className="min-w-full text-sm text-gray-700">
-                            <thead className="border-b text-xs uppercase tracking-wide text-gray-500">
-                              <tr>
-                                <th className="px-3 py-2 text-left">Data</th>
-                                <th className="px-3 py-2 text-right">Aplicação</th>
-                                <th className="px-3 py-2 text-right">Resgate</th>
-                                <th className="px-3 py-2 text-right">Saldo do dia</th>
-                                <th className="px-3 py-2 text-right">Saldo final</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                              {saldosDiariosAplicacao.map((item) => {
-                                const saldoDoDia = item.saldoMovimentacao;
-                                const classeSaldoDia =
-                                  saldoDoDia > 0
-                                    ? 'text-success-700'
-                                    : saldoDoDia < 0
-                                      ? 'text-error-600'
-                                      : 'text-gray-600';
-
-                                return (
-                                  <tr key={item.data}>
-                                    <td className="px-3 py-2">{formatarDataCompleta(item.data)}</td>
-                                    <td className="px-3 py-2 text-right text-success-700">
-                                      {item.aplicadoNoDia === 0 ? '-' : formatCurrency(item.aplicadoNoDia)}
-                                    </td>
-                                    <td className="px-3 py-2 text-right text-error-600">
-                                      {item.resgatadoNoDia === 0 ? '-' : formatCurrency(item.resgatadoNoDia)}
-                                    </td>
-                                    <td className={`px-3 py-2 text-right font-medium ${classeSaldoDia}`}>
-                                      {saldoDoDia === 0 ? '-' : formatCurrency(saldoDoDia)}
-                                    </td>
-                                    <td className="px-3 py-2 text-right font-semibold text-gray-800">
-                                      {formatCurrency(item.saldoFinal)}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
                     </div>
                   </div>
                 )}
