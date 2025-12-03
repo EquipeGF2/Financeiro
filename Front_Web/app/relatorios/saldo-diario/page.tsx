@@ -18,6 +18,23 @@ import { getUserSession } from '@/lib/userSession';
 
 const toISODate = (date: Date): string => date.toISOString().split('T')[0];
 
+const calcularUltimoDiaUtil = (): string => {
+  const hoje = new Date();
+  const data = new Date(hoje);
+  data.setDate(data.getDate() - 1);
+
+  for (let i = 0; i < 7; i += 1) {
+    const diaSemana = data.getDay();
+    if (diaSemana !== 0 && diaSemana !== 6) {
+      return toISODate(data);
+    }
+
+    data.setDate(data.getDate() - 1);
+  }
+
+  return toISODate(hoje);
+};
+
 const dataISOValida = (valor: string): boolean => /^(\d{4})-(\d{2})-(\d{2})$/.test(valor);
 
 const formatarDataPt = (iso: string): string => {
@@ -254,7 +271,7 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
   const [carregandoUsuario, setCarregandoUsuario] = useState(true);
   const [carregandoDados, setCarregandoDados] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const [dataReferencia, setDataReferencia] = useState(() => toISODate(new Date()));
+  const [dataReferencia, setDataReferencia] = useState(() => calcularUltimoDiaUtil());
   const [relatorio, setRelatorio] = useState<RelatorioSaldoDiario | null>(null);
   const [emailModalAberto, setEmailModalAberto] = useState(false);
   const [emailDestino, setEmailDestino] = useState('');

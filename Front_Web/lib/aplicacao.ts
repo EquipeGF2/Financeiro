@@ -71,6 +71,7 @@ interface RegistroSaldoInicial {
 interface PagamentoAplicacao {
   pag_data: string;
   pag_valor: number;
+  pag_descricao?: string | null;
   are_areas: { are_nome?: string | null } | { are_nome?: string | null }[] | null;
 }
 
@@ -126,7 +127,7 @@ export async function carregarExtratoAplicacao(
     const [pagamentosRes, receitasRes] = await Promise.all([
       supabase
         .from('pag_pagamentos_area')
-        .select('pag_data, pag_valor, are_areas(are_nome)')
+        .select('pag_data, pag_valor, pag_descricao, are_areas(are_nome)')
         .gte('pag_data', dataBase)
         .lte('pag_data', fim)
         .order('pag_data', { ascending: true }),
@@ -152,23 +153,28 @@ export async function carregarExtratoAplicacao(
 
     const rel = extrairRelacao(pagamento.are_areas);
     const nomeArea = rel?.are_nome ?? 'Aplicação';
-    if (!ehMovimentacaoAplicacao(nomeArea)) return;
+    const descricaoInformada = pagamento.pag_descricao ?? '';
+    const textoReferencia = [nomeArea, descricaoInformada].filter(Boolean).join(' ');
+    if (!ehMovimentacaoAplicacao(textoReferencia)) return;
 
     const valor = normalizarNumero(pagamento.pag_valor);
     if (valor === 0) return;
 
-    const isResgate = ehResgate(nomeArea);
-    const isTransferencia = ehTransferencia(nomeArea);
+    const isResgate = ehResgate(textoReferencia);
+    const isTransferencia = ehTransferencia(textoReferencia);
+    const descricaoMovimento = descricaoInformada.trim()
+      ? descricaoInformada
+      : isResgate
+        ? 'Resgate informado em pagamentos'
+        : isTransferencia
+          ? 'Transferência para aplicação'
+          : nomeArea;
 
     movimentos.push({
       data: dataMovimento,
       tipo: isResgate ? 'resgate' : 'aplicacao',
       valor: valor,
-      descricao: isResgate
-        ? 'Resgate informado em pagamentos'
-        : isTransferencia
-          ? 'Transferência para aplicação'
-          : nomeArea,
+      descricao: descricaoMovimento,
       origem: 'pagamentos',
     });
   });
