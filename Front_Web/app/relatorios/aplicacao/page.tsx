@@ -14,11 +14,6 @@ const formatarDataCurta = (iso: string) => {
   return `${dia}/${mes}/${ano}`;
 };
 
-const badgeClassPorTipo = (tipo: 'aplicacao' | 'resgate') =>
-  tipo === 'aplicacao'
-    ? 'inline-flex rounded-full bg-error-50 px-3 py-1 text-xs font-semibold text-error-700'
-    : 'inline-flex rounded-full bg-success-50 px-3 py-1 text-xs font-semibold text-success-700';
-
 const AplicacaoRelatorioPage: React.FC = () => {
   const hoje = useMemo(() => new Date(), []);
   const [inicio, setInicio] = useState(() => {
@@ -117,10 +112,10 @@ const AplicacaoRelatorioPage: React.FC = () => {
               </Card>
             </div>
 
-            <div className="grid gap-6 xl:grid-cols-2">
+            <div className="grid gap-6">
               <Card
                 title="Movimentação diária"
-                subtitle="Demonstrativo por dia com aplicações, resgates e saldo final"
+                subtitle="Demonstrativo por dia com aplicações, resgates e saldo acumulado"
                 variant="primary"
               >
                 <div className="overflow-auto">
@@ -130,82 +125,45 @@ const AplicacaoRelatorioPage: React.FC = () => {
                         <th className="px-3 py-2 text-left">Data</th>
                         <th className="px-3 py-2 text-right">Aplicação</th>
                         <th className="px-3 py-2 text-right">Resgate</th>
+                        <th className="px-3 py-2 text-right">Saldo do dia</th>
                         <th className="px-3 py-2 text-right">Saldo final</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {extrato.saldosDiarios.length === 0 ? (
                         <tr>
-                          <td className="px-3 py-3 text-center text-sm text-gray-500" colSpan={4}>
+                          <td className="px-3 py-3 text-center text-sm text-gray-500" colSpan={5}>
                             Nenhum movimento de aplicação encontrado para o período.
                           </td>
                         </tr>
                       ) : (
-                        extrato.saldosDiarios.map((item) => (
-                          <tr key={item.data}>
-                            <td className="px-3 py-2">{formatarDataCurta(item.data)}</td>
-                            <td className="px-3 py-2 text-right text-error-600">
-                              {item.aplicadoNoDia === 0 ? '-' : formatCurrency(item.aplicadoNoDia)}
-                            </td>
-                            <td className="px-3 py-2 text-right text-success-700">
-                              {item.resgatadoNoDia === 0 ? '-' : formatCurrency(item.resgatadoNoDia)}
-                            </td>
-                            <td className="px-3 py-2 text-right font-semibold text-gray-800">
-                              {formatCurrency(item.saldoFinal)}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
+                        extrato.saldosDiarios.map((item) => {
+                          const saldoDoDia = item.saldoMovimentacao;
+                          const classeSaldoDia =
+                            saldoDoDia > 0
+                              ? 'text-success-700'
+                              : saldoDoDia < 0
+                                ? 'text-error-600'
+                                : 'text-gray-600';
 
-              <Card
-                title="Extrato da aplicação"
-                subtitle="Lista de lançamentos que alteraram o saldo no período"
-                variant="default"
-              >
-                <div className="overflow-auto">
-                  <table className="min-w-full text-sm text-gray-700">
-                    <thead className="border-b text-xs uppercase tracking-wide text-gray-500">
-                      <tr>
-                        <th className="px-3 py-2 text-left">Data</th>
-                        <th className="px-3 py-2 text-left">Descrição</th>
-                        <th className="px-3 py-2 text-center">Tipo</th>
-                        <th className="px-3 py-2 text-right">Valor</th>
-                        <th className="px-3 py-2 text-right">Saldo após</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {extrato.movimentos.length === 0 ? (
-                        <tr>
-                          <td className="px-3 py-3 text-center text-sm text-gray-500" colSpan={5}>
-                            Nenhuma movimentação de aplicação encontrada neste período.
-                          </td>
-                        </tr>
-                      ) : (
-                        extrato.movimentos.map((movimento, index) => (
-                          <tr key={`${movimento.data}-${index}`}>
-                            <td className="px-3 py-2">{formatarDataCurta(movimento.data)}</td>
-                            <td className="px-3 py-2">{movimento.descricao}</td>
-                            <td className="px-3 py-2 text-center">
-                              <span className={badgeClassPorTipo(movimento.tipo)}>
-                                {movimento.tipo === 'aplicacao' ? 'Aplicação' : 'Resgate'}
-                              </span>
-                            </td>
-                            <td
-                              className={`px-3 py-2 text-right ${
-                                movimento.tipo === 'aplicacao' ? 'text-error-600' : 'text-success-700'
-                              }`}
-                            >
-                              {formatCurrency(movimento.valor)}
-                            </td>
-                            <td className="px-3 py-2 text-right font-semibold text-gray-800">
-                              {formatCurrency(movimento.saldoApos ?? extrato.saldoInicial)}
-                            </td>
-                          </tr>
-                        ))
+                          return (
+                            <tr key={item.data}>
+                              <td className="px-3 py-2">{formatarDataCurta(item.data)}</td>
+                              <td className="px-3 py-2 text-right text-success-700">
+                                {item.aplicadoNoDia === 0 ? '-' : formatCurrency(item.aplicadoNoDia)}
+                              </td>
+                              <td className="px-3 py-2 text-right text-error-600">
+                                {item.resgatadoNoDia === 0 ? '-' : formatCurrency(item.resgatadoNoDia)}
+                              </td>
+                              <td className={`px-3 py-2 text-right font-medium ${classeSaldoDia}`}>
+                                {saldoDoDia === 0 ? '-' : formatCurrency(saldoDoDia)}
+                              </td>
+                              <td className="px-3 py-2 text-right font-semibold text-gray-800">
+                                {formatCurrency(item.saldoFinal)}
+                              </td>
+                            </tr>
+                          );
+                        })
                       )}
                     </tbody>
                   </table>

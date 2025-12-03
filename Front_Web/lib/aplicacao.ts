@@ -22,6 +22,7 @@ export interface SaldoDiarioAplicacao {
   saldoFinal: number;
   aplicadoNoDia: number;
   resgatadoNoDia: number;
+  saldoMovimentacao: number;
 }
 
 export interface ExtratoAplicacao {
@@ -255,6 +256,7 @@ export async function carregarExtratoAplicacao(
         saldoFinal: saldoPorDia,
         aplicadoNoDia,
         resgatadoNoDia,
+        saldoMovimentacao: aplicadoNoDia - resgatadoNoDia,
       });
     }
   });
