@@ -181,24 +181,19 @@ const formatarData = (isoDate: string): string => {
 
 const calcularUltimoDiaUtil = (): string => {
   const hoje = new Date();
-  const diaSemana = hoje.getDay();
-
-  // Se hoje é dia útil, retorna hoje
-  if (diaSemana !== 0 && diaSemana !== 6) {
-    return hoje.toISOString().split('T')[0];
-  }
-
-  // Se não, procura o último dia útil
   const data = new Date(hoje);
-  for (let i = 1; i <= 7; i += 1) {
-    data.setDate(hoje.getDate() - i);
-    const dia = data.getDay();
-    if (dia !== 0 && dia !== 6) {
+  data.setDate(data.getDate() - 1);
+
+  for (let i = 0; i < 7; i += 1) {
+    const diaSemana = data.getDay();
+    if (diaSemana !== 0 && diaSemana !== 6) {
       return data.toISOString().split('T')[0];
     }
+
+    data.setDate(data.getDate() - 1);
   }
 
-  return new Date().toISOString().split('T')[0];
+  return new Date(hoje).toISOString().split('T')[0];
 };
 
 const obterOrdemArea = (nomeArea: string): number => {
