@@ -87,6 +87,15 @@ const normalizarNome = (valor: unknown, fallback: string): string => {
   return fallback;
 };
 
+const normalizarComparacao = (texto: string): string =>
+  texto
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .trim();
+
+const AREAS_EXCLUIDAS = ['TRANSFERENCIA APLICACAO'];
+
 const extrairRelacao = <T,>(valor: T | T[] | null | undefined): T | null => {
   if (!valor) {
     return null;
@@ -138,11 +147,13 @@ const SimpleLineChart: React.FC<{
 }> = ({ labels, series, legenda = true }) => {
   const width = 900;
   const height = 360;
-  const paddingX = 48;
+  const paddingX = 64;
   const paddingY = 32;
   const passoX = labels.length > 1 ? (width - paddingX * 2) / (labels.length - 1) : 0;
   const valores = series.flatMap((serie) => serie.values);
   const maxValor = valores.length ? Math.max(...valores) : 0;
+
+  const stepLabels = Math.max(1, Math.ceil(labels.length / 10));
 
   // Arredondar para valores inteiros limpos (10k, 50k, 100k, 250k, etc)
   const arredondarParaValorLimpo = (valor: number): number => {
@@ -169,7 +180,11 @@ const SimpleLineChart: React.FC<{
 
   return (
     <div className="space-y-3 w-full">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-80 w-full max-w-full">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="h-80 w-full max-w-full"
+        preserveAspectRatio="xMinYMin meet"
+      >
         <line
           x1={paddingX}
           y1={height - paddingY}
@@ -247,6 +262,9 @@ const SimpleLineChart: React.FC<{
           );
         })}
         {labels.map((label, index) => {
+          if (index !== labels.length - 1 && index % stepLabels !== 0) {
+            return null;
+          }
           const x = paddingX + passoX * index;
           return (
             <text
@@ -287,6 +305,8 @@ const PagamentosPage: React.FC = () => {
     return toISODate(inicio);
   });
   const [periodoFim, setPeriodoFim] = useState(() => toISODate(hoje));
+  const [filtroInicio, setFiltroInicio] = useState(() => periodoInicio);
+  const [filtroFim, setFiltroFim] = useState(() => periodoFim);
 
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -381,9 +401,23 @@ const PagamentosPage: React.FC = () => {
     [periodoInicio, periodoFim],
   );
 
+  const intervaloFiltro = useMemo(
+    () => gerarIntervaloDatas(filtroInicio, filtroFim),
+    [filtroInicio, filtroFim],
+  );
+
+  const pagamentosAreaFiltrados = useMemo(() => {
+    return pagamentosArea.filter((item) => {
+      const relacao = extrairRelacao(item.are_areas);
+      const nome = normalizarNome(relacao?.are_nome, 'Área não informada');
+      const chaveComparacao = normalizarComparacao(nome);
+      return !AREAS_EXCLUIDAS.some((area) => area === chaveComparacao);
+    });
+  }, [pagamentosArea]);
+
   const resumoAreas = useMemo(() => {
     const mapa = new Map<string, number>();
-    pagamentosArea.forEach((item) => {
+    pagamentosAreaFiltrados.forEach((item) => {
       const relacao = extrairRelacao(item.are_areas);
       const nome = normalizarNome(relacao?.are_nome, 'Área não informada');
       const valor = Number(item.pag_valor ?? 0);
@@ -394,7 +428,7 @@ const PagamentosPage: React.FC = () => {
       .sort((a, b) => b.valor - a.valor);
     const total = itens.reduce((acc, item) => acc + item.valor, 0);
     return { itens, total };
-  }, [pagamentosArea]);
+  }, [pagamentosAreaFiltrados]);
 
   const resumoBancos = useMemo(() => {
     const mapa = new Map<string, number>();
@@ -426,7 +460,7 @@ const PagamentosPage: React.FC = () => {
 
   const mapaPagamentosPorData = useMemo(() => {
     const mapa = new Map<string, Map<string, number>>();
-    pagamentosArea.forEach((item) => {
+    pagamentosAreaFiltrados.forEach((item) => {
       const relacao = extrairRelacao(item.are_areas);
       const nome = normalizarNome(relacao?.are_nome, 'Área não informada');
       const valor = Number(item.pag_valor ?? 0);
@@ -435,7 +469,7 @@ const PagamentosPage: React.FC = () => {
       mapa.set(item.pag_data, mapaDia);
     });
     return mapa;
-  }, [pagamentosArea]);
+  }, [pagamentosAreaFiltrados]);
 
   const chavesAreas = useMemo(() => resumoAreas.itens.map((item) => item.nome), [resumoAreas]);
   const chavesBancos = useMemo(() => resumoBancos.itens.map((item) => item.nome), [resumoBancos]);
@@ -505,6 +539,7 @@ const PagamentosPage: React.FC = () => {
   }, [resumoBancos]);
 
   const linhasAreas: SerieLinha[] = useMemo(() => {
+    if (!intervaloDatas.length) return [];
     return areasSelecionadas.map((area) => {
       const color = areaCores.get(area) ?? coresPadrao[0];
       const values = intervaloDatas.map((data) => {
@@ -516,6 +551,7 @@ const PagamentosPage: React.FC = () => {
   }, [areasSelecionadas, areaCores, intervaloDatas, mapaPagamentosPorData]);
 
   const linhasBancos: SerieLinha[] = useMemo(() => {
+    if (!intervaloDatas.length) return [];
     return bancosSelecionados.map((banco) => {
       const color = bancoCores.get(banco) ?? coresPadrao[0];
       const values = intervaloDatas.map((data) => {
@@ -554,6 +590,12 @@ const PagamentosPage: React.FC = () => {
   const totalPagamentosPeriodo = useMemo(() => resumoAreas.total, [resumoAreas]);
   const totalPorBanco = useMemo(() => resumoBancos.total, [resumoBancos]);
 
+  const aplicarPeriodo = () => {
+    if (!filtroInicio) return;
+    setPeriodoInicio(filtroInicio);
+    setPeriodoFim(filtroFim || filtroInicio);
+  };
+
   const handleToggleArea = (nome: string) => {
     setAreasSelecionadas((atual) => {
       if (atual.includes(nome)) {
@@ -582,23 +624,33 @@ const PagamentosPage: React.FC = () => {
             <Input
               type="date"
               label="Início"
-              value={periodoInicio}
+              value={filtroInicio}
               onChange={(event) => {
                 const valor = event.target.value;
-                setPeriodoInicio(valor);
-                if (valor && valor > periodoFim) {
-                  setPeriodoFim(valor);
+                setFiltroInicio(valor);
+                if (valor && valor > filtroFim) {
+                  setFiltroFim(valor);
                 }
               }}
             />
             <Input
               type="date"
               label="Fim"
-              value={periodoFim}
-              min={periodoInicio}
-              onChange={(event) => setPeriodoFim(event.target.value)}
+              value={filtroFim}
+              min={filtroInicio}
+              onChange={(event) => setFiltroFim(event.target.value)}
             />
-            <div className="text-sm text-gray-500">Período com {intervaloDatas.length} dia(s)</div>
+            <Button
+              variant="primary"
+              onClick={aplicarPeriodo}
+              disabled={!filtroInicio || carregando}
+              className="sm:ml-2"
+            >
+              Aplicar período
+            </Button>
+            <div className="text-sm text-gray-500">
+              Prévia: {intervaloFiltro.length} dia(s) selecionado(s)
+            </div>
           </div>
         }
       />
@@ -664,46 +716,60 @@ const PagamentosPage: React.FC = () => {
                 ) : erroAplicacao ? (
                   <p className="text-sm text-error-700">{erroAplicacao}</p>
                 ) : (
-                  <div className="grid gap-4 text-sm text-gray-700 md:grid-cols-2">
-                    <div className="space-y-2 rounded-lg border border-gray-200 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                        Movimentação no período selecionado
-                      </p>
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-gray-600">Aplicação realizada</span>
-                        <span className="font-semibold text-success-600">
-                          {formatCurrency(movimentacaoAplicacao.aplicacao)}
-                        </span>
+                  <div className="space-y-6 text-sm text-gray-700">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2 rounded-lg border border-gray-200 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Movimentação no período selecionado
+                        </p>
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-gray-600">Aplicação realizada</span>
+                          <span className="font-semibold text-success-600">
+                            {formatCurrency(movimentacaoAplicacao.aplicacao)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-gray-600">Resgate aplicação</span>
+                          <span className="font-semibold text-error-600">
+                            {formatCurrency(movimentacaoAplicacao.resgate)}
+                          </span>
+                        </div>
+                        <div
+                          className={`mt-3 rounded-lg px-3 py-2 text-right font-semibold ${
+                            movimentacaoAplicacao.subtotal >= 0
+                              ? 'bg-success-50 text-success-700'
+                              : 'bg-error-50 text-error-600'
+                          }`}
+                        >
+                          Valor movimentado (subtotal): {formatCurrency(movimentacaoAplicacao.subtotal)}
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-gray-600">Resgate aplicação</span>
-                        <span className="font-semibold text-error-600">
-                          {formatCurrency(movimentacaoAplicacao.resgate)}
-                        </span>
-                      </div>
-                      <div className="mt-3 rounded-lg bg-error-50 px-3 py-2 text-right font-semibold text-error-600">
-                        Valor movimentado (subtotal): {formatCurrency(movimentacaoAplicacao.subtotal)}
-                      </div>
-                    </div>
 
-                    <div className="space-y-2 rounded-lg border border-gray-200 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                        Saldo de aplicação ao final do período
-                      </p>
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-gray-600">Saldo inicial</span>
-                        <span className="font-semibold text-gray-800">
-                          {formatCurrency(movimentacaoAplicacao.saldoInicial)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium text-gray-600">Valor movimentado</span>
-                        <span className="font-semibold text-error-600">
-                          {formatCurrency(movimentacaoAplicacao.subtotal)}
-                        </span>
-                      </div>
-                      <div className="mt-3 rounded-lg bg-success-50 px-3 py-2 text-right font-semibold text-success-600">
-                        Saldo final: {formatCurrency(movimentacaoAplicacao.saldoFinal)}
+                      <div className="space-y-2 rounded-lg border border-gray-200 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                          Saldo de aplicação ao final do período
+                        </p>
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-gray-600">Saldo inicial</span>
+                          <span className="font-semibold text-gray-800">
+                            {formatCurrency(movimentacaoAplicacao.saldoInicial)}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-gray-600">Valor movimentado</span>
+                          <span
+                            className={`font-semibold ${
+                              movimentacaoAplicacao.subtotal >= 0
+                                ? 'text-success-700'
+                                : 'text-error-600'
+                            }`}
+                          >
+                            {formatCurrency(movimentacaoAplicacao.subtotal)}
+                          </span>
+                        </div>
+                        <div className="mt-3 rounded-lg bg-success-50 px-3 py-2 text-right font-semibold text-success-600">
+                          Saldo final: {formatCurrency(movimentacaoAplicacao.saldoFinal)}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -837,7 +903,7 @@ const PagamentosPage: React.FC = () => {
                       </Button>
                     ))}
                   </div>
-                  {linhasBancos.length === 0 ? (
+                  {linhasBancos.length === 0 || intervaloDatas.length === 0 ? (
                     <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
                       Selecione ao menos um banco para visualizar a evolução dos saldos.
                     </div>
@@ -878,7 +944,7 @@ const PagamentosPage: React.FC = () => {
                         </Button>
                       ))}
                     </div>
-                    {linhasAreas.length === 0 ? (
+                    {linhasAreas.length === 0 || intervaloDatas.length === 0 ? (
                       <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-6 text-center text-sm text-gray-500">
                         Selecione ao menos uma área para visualizar a evolução diária.
                       </div>
