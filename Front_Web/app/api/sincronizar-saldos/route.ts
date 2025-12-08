@@ -31,16 +31,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = createClient(supabaseUrl, supabaseKey, {
-      global: {
-        headers: {
-          'x-user-id': userId,
-        },
-      },
-    });
+    // Cliente Supabase sem headers para buscar/criar usuário
+    // (a política RLS de usr_usuarios permite SELECT/INSERT para todos)
+    const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
 
     // Buscar ou criar o usr_id do usuário no banco
-    let { data: usuarioData, error: erroUsuario } = await supabase
+    let { data: usuarioData, error: erroUsuario } = await supabaseAdmin
       .from('usr_usuarios')
       .select('usr_id')
       .eq('usr_identificador', userId)
@@ -56,7 +52,7 @@ export async function POST(request: NextRequest) {
 
     // Se o usuário não existe, criar
     if (!usuarioData) {
-      const { data: novoUsuario, error: erroCriar } = await supabase
+      const { data: novoUsuario, error: erroCriar } = await supabaseAdmin
         .from('usr_usuarios')
         .insert({
           usr_identificador: userId,
@@ -85,6 +81,15 @@ export async function POST(request: NextRequest) {
     }
 
     const usrId = usuarioData.usr_id;
+
+    // Cliente Supabase COM headers para operações de dados
+    const supabase = createClient(supabaseUrl, supabaseKey, {
+      global: {
+        headers: {
+          'x-user-id': userId,
+        },
+      },
+    });
 
     // 1. Buscar o saldo final do dia anterior à data de início
     const { data: saldoDiaAnterior, error: erroSaldoAnterior } = await supabase
