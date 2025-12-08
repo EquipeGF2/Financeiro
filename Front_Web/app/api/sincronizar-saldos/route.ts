@@ -7,10 +7,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+import { getSupabaseServer } from '@/lib/supabaseClient';
 
 export async function POST(request: NextRequest) {
   try {
@@ -36,33 +34,11 @@ export async function POST(request: NextRequest) {
     // Cliente Supabase com header x-user-id
     // O usuário já está autenticado e existe no sistema
     // As políticas RLS filtram automaticamente os dados do usuário
-    const supabase = createClient(supabaseUrl, supabaseKey, {
-      global: {
-        headers: {
-          'x-user-id': userId,
-        },
-      },
-    });
-
-    console.log('Buscando saldo do dia anterior...');
-
-    // 1. Buscar o saldo final do dia anterior à data de início
-    const { data: saldoDiaAnterior, error: erroSaldoAnterior } = await supabase
-      .from('sdd_saldo_diario')
-      .select('sdd_saldo_final')
-      .lt('sdd_data', dataInicio)
-      .order('sdd_data', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (erroSaldoAnterior) {
-      console.error('Erro ao buscar saldo anterior:', erroSaldoAnterior);
-      throw erroSaldoAnterior;
-    }
+    const supabase = getSupabaseServer({ userId });
 
     console.log('Buscando registros de saldo a partir de', dataInicio);
 
-    // 2. Buscar todos os registros de saldo diário a partir da data de início
+    // 1. Buscar todos os registros de saldo diário a partir da data de início
     const { data: registrosSaldo, error: erroRegistros } = await supabase
       .from('sdd_saldo_diario')
       .select('*')
@@ -84,76 +60,28 @@ export async function POST(request: NextRequest) {
 
     console.log(`Encontrados ${registrosSaldo.length} registros para sincronizar`);
 
-    let saldoFinalAnterior = saldoDiaAnterior?.sdd_saldo_final ?? 0;
+    let saldoFinalAnterior = registrosSaldo[0].sdd_saldo_final ?? 0;
     const registrosAtualizados = [];
 
-    // 3. Para cada dia, recalcular os saldos
-    for (const registro of registrosSaldo) {
+    // 2. Para cada dia, ajustar o saldo inicial para o saldo final do dia anterior
+    //    preservando a variação registrada no próprio dia
+    for (const [index, registro] of registrosSaldo.entries()) {
+      if (index === 0) {
+        // Primeiro dia da janela: ponto de partida
+        console.log(`Dia inicial ${registro.sdd_data}: mantendo saldos existentes.`);
+        saldoFinalAnterior = registro.sdd_saldo_final ?? 0;
+        continue;
+      }
+
       const dataAtual = registro.sdd_data;
       console.log(`Processando ${dataAtual}...`);
 
-      // Buscar receitas do dia (RLS filtra automaticamente pelo usuário)
-      const { data: receitas, error: erroReceitas } = await supabase
-        .from('rec_receitas')
-        .select('rec_valor')
-        .eq('rec_data', dataAtual);
-
-      if (erroReceitas) {
-        console.error(`Erro ao buscar receitas para ${dataAtual}:`, erroReceitas);
-        continue;
-      }
-
-      // Buscar despesas do dia (RLS filtra automaticamente pelo usuário)
-      const { data: despesas, error: erroDespesas } = await supabase
-        .from('pag_pagamentos_area')
-        .select('pag_valor, are_areas(are_nome)')
-        .eq('pag_data', dataAtual);
-
-      if (erroDespesas) {
-        console.error(`Erro ao buscar despesas para ${dataAtual}:`, erroDespesas);
-        continue;
-      }
-
-      // Calcular totais
-      const totalReceitas = (receitas || []).reduce(
-        (acc, r) => acc + (Number(r.rec_valor) || 0),
-        0
-      );
-
-      // Separar aplicações de despesas normais
-      let totalDespesas = 0;
-      let aplicacoes = 0;
-
-      (despesas || []).forEach((d: any) => {
-        const valor = Number(d.pag_valor) || 0;
-        const areaNome = d.are_areas?.are_nome || '';
-        const areaNormalizada = areaNome.trim().toUpperCase();
-
-        const ehAplicacao = areaNormalizada.includes('APLICACAO') ||
-                           areaNormalizada.includes('APLICAÇÃO');
-
-        if (ehAplicacao) {
-          const ehResgate = areaNormalizada.includes('RESGATE');
-          const ehTransferencia = areaNormalizada.includes('TRANSFERENCIA') ||
-                                 areaNormalizada.includes('TRANSFERÊNCIA');
-
-          if (ehResgate) {
-            aplicacoes += valor; // Resgate: entrada
-          } else if (ehTransferencia) {
-            aplicacoes -= valor; // Transferência: saída
-          } else {
-            aplicacoes -= valor; // Padrão: saída
-          }
-        } else {
-          totalDespesas += valor;
-        }
-      });
-
-      // Recalcular saldos
-      const novoSaldoInicial = Math.round(saldoFinalAnterior * 100) / 100;
-      const novoSaldoFinal = Math.round(
-        (novoSaldoInicial + totalReceitas - totalDespesas + aplicacoes) * 100
+      const variacaoDiaria = Math.round(
+        ((registro.sdd_saldo_final ?? 0) - (registro.sdd_saldo_inicial ?? 0)) * 100
       ) / 100;
+
+      const novoSaldoInicial = Math.round(saldoFinalAnterior * 100) / 100;
+      const novoSaldoFinal = Math.round((novoSaldoInicial + variacaoDiaria) * 100) / 100;
 
       console.log(`${dataAtual}: Saldo inicial ${novoSaldoInicial} -> Saldo final ${novoSaldoFinal}`);
 
@@ -164,7 +92,7 @@ export async function POST(request: NextRequest) {
           sdd_saldo_inicial: novoSaldoInicial,
           sdd_saldo_final: novoSaldoFinal,
         })
-        .eq('sdd_data', dataAtual);
+        .eq('sdd_id', registro.sdd_id);
 
       if (erroAtualizacao) {
         console.error(`Erro ao atualizar saldo para ${dataAtual}:`, erroAtualizacao);
