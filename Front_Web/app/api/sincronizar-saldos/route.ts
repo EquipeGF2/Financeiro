@@ -33,61 +33,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Primeiro, garantir que o usuário existe na tabela usr_usuarios
-    // Fazemos isso sem header para evitar problemas de RLS circular
-    const supabaseNoAuth = createClient(supabaseUrl, supabaseKey);
-
-    console.log('Verificando se usuário existe...');
-    const { data: usuarioExiste } = await supabaseNoAuth
-      .from('usr_usuarios')
-      .select('usr_id')
-      .eq('usr_identificador', userId)
-      .maybeSingle();
-
-    if (!usuarioExiste) {
-      console.log('Usuário não existe, criando...');
-      const { error: erroCriarUsuario } = await supabaseNoAuth
-        .from('usr_usuarios')
-        .insert({
-          usr_identificador: userId,
-          usr_nome: `Usuário ${userId.slice(0, 8)}`,
-          usr_ativo: true,
-        });
-
-      if (erroCriarUsuario) {
-        // Log completo do erro antes de verificar
-        console.error('ERRO COMPLETO ao criar usuário:', {
-          code: erroCriarUsuario.code,
-          message: erroCriarUsuario.message,
-          details: erroCriarUsuario.details,
-          hint: erroCriarUsuario.hint,
-          full: erroCriarUsuario
-        });
-
-        // Se o erro for de chave duplicada (23505), significa que o usuário já existe
-        // Isso pode acontecer em race conditions - não é um erro real
-        if (erroCriarUsuario.code === '23505') {
-          console.log('Usuário já existe (detectado via constraint), continuando...');
-        } else {
-          console.error('Erro ao criar usuário - código diferente de 23505');
-          return NextResponse.json(
-            {
-              error: 'Erro ao criar usuário',
-              details: erroCriarUsuario.message,
-              code: erroCriarUsuario.code,
-              hint: erroCriarUsuario.hint
-            },
-            { status: 500 }
-          );
-        }
-      } else {
-        console.log('Usuário criado com sucesso');
-      }
-    } else {
-      console.log('Usuário já existe:', usuarioExiste.usr_id);
-    }
-
     // Cliente Supabase com header x-user-id
+    // O usuário já está autenticado e existe no sistema
     // As políticas RLS filtram automaticamente os dados do usuário
     const supabase = createClient(supabaseUrl, supabaseKey, {
       global: {
@@ -97,7 +44,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    console.log('Cliente Supabase criado com header x-user-id');
+    console.log('Buscando saldo do dia anterior...');
 
     // 1. Buscar o saldo final do dia anterior à data de início
     const { data: saldoDiaAnterior, error: erroSaldoAnterior } = await supabase
@@ -113,6 +60,8 @@ export async function POST(request: NextRequest) {
       throw erroSaldoAnterior;
     }
 
+    console.log('Buscando registros de saldo a partir de', dataInicio);
+
     // 2. Buscar todos os registros de saldo diário a partir da data de início
     const { data: registrosSaldo, error: erroRegistros } = await supabase
       .from('sdd_saldo_diario')
@@ -126,11 +75,14 @@ export async function POST(request: NextRequest) {
     }
 
     if (!registrosSaldo || registrosSaldo.length === 0) {
+      console.log('Nenhum registro encontrado para sincronizar');
       return NextResponse.json({
         message: 'Nenhum registro encontrado para sincronizar a partir desta data',
         registrosAtualizados: 0,
       });
     }
+
+    console.log(`Encontrados ${registrosSaldo.length} registros para sincronizar`);
 
     let saldoFinalAnterior = saldoDiaAnterior?.sdd_saldo_final ?? 0;
     const registrosAtualizados = [];
@@ -138,6 +90,7 @@ export async function POST(request: NextRequest) {
     // 3. Para cada dia, recalcular os saldos
     for (const registro of registrosSaldo) {
       const dataAtual = registro.sdd_data;
+      console.log(`Processando ${dataAtual}...`);
 
       // Buscar receitas do dia (RLS filtra automaticamente pelo usuário)
       const { data: receitas, error: erroReceitas } = await supabase
@@ -202,6 +155,8 @@ export async function POST(request: NextRequest) {
         (novoSaldoInicial + totalReceitas - totalDespesas + aplicacoes) * 100
       ) / 100;
 
+      console.log(`${dataAtual}: Saldo inicial ${novoSaldoInicial} -> Saldo final ${novoSaldoFinal}`);
+
       // Atualizar o registro (RLS garante que só atualiza dados do usuário)
       const { error: erroAtualizacao } = await supabase
         .from('sdd_saldo_diario')
@@ -227,6 +182,8 @@ export async function POST(request: NextRequest) {
       // Preparar para o próximo dia
       saldoFinalAnterior = novoSaldoFinal;
     }
+
+    console.log(`Sincronização concluída: ${registrosAtualizados.length} registros atualizados`);
 
     return NextResponse.json({
       message: 'Sincronização concluída com sucesso',
