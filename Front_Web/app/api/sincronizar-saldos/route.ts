@@ -17,6 +17,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { dataInicio, userId } = body;
 
+    console.log('Iniciando sincronização:', { dataInicio, userId: userId?.slice(0, 8) });
+
     if (!dataInicio) {
       return NextResponse.json(
         { error: 'Data de início é obrigatória' },
@@ -40,6 +42,8 @@ export async function POST(request: NextRequest) {
         },
       },
     });
+
+    console.log('Cliente Supabase criado com header x-user-id');
 
     // 1. Buscar o saldo final do dia anterior à data de início
     const { data: saldoDiaAnterior, error: erroSaldoAnterior } = await supabase
@@ -175,10 +179,23 @@ export async function POST(request: NextRequest) {
       registrosAtualizados: registrosAtualizados.length,
       detalhes: registrosAtualizados,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erro ao sincronizar saldos:', error);
+    console.error('Detalhes do erro:', {
+      message: error?.message,
+      code: error?.code,
+      details: error?.details,
+      hint: error?.hint,
+      stack: error?.stack
+    });
     return NextResponse.json(
-      { error: 'Erro ao sincronizar saldos', details: String(error) },
+      {
+        error: 'Erro ao sincronizar saldos',
+        message: error?.message || String(error),
+        details: error?.details,
+        code: error?.code,
+        hint: error?.hint
+      },
       { status: 500 }
     );
   }
