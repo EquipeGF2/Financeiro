@@ -7,10 +7,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+import { getSupabaseServer } from '@/lib/supabaseClient';
 
 export async function POST(request: NextRequest) {
   try {
@@ -36,13 +34,7 @@ export async function POST(request: NextRequest) {
     // Cliente Supabase com header x-user-id
     // O usuário já está autenticado e existe no sistema
     // As políticas RLS filtram automaticamente os dados do usuário
-    const supabase = createClient(supabaseUrl, supabaseKey, {
-      global: {
-        headers: {
-          'x-user-id': userId,
-        },
-      },
-    });
+    const supabase = getSupabaseServer({ userId });
 
     console.log('Buscando saldo do dia anterior...');
 
