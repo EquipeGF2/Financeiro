@@ -279,6 +279,10 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
   const [enviandoEmail, setEnviandoEmail] = useState(false);
   const [feedbackEmail, setFeedbackEmail] = useState<string | null>(null);
   const [alertaAuditoria, setAlertaAuditoria] = useState<string | null>(null);
+  const [sincronizandoSaldos, setSincronizandoSaldos] = useState(false);
+  const [modalSincronizacaoAberto, setModalSincronizacaoAberto] = useState(false);
+  const [dataSincronizacao, setDataSincronizacao] = useState('');
+  const [resultadoSincronizacao, setResultadoSincronizacao] = useState<string | null>(null);
 
   const carregarUsuario = useCallback(async () => {
     try {
@@ -1100,6 +1104,63 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
     }
   };
 
+  const handleAbrirModalSincronizacao = () => {
+    setResultadoSincronizacao(null);
+    setDataSincronizacao('');
+    setModalSincronizacaoAberto(true);
+  };
+
+  const handleSincronizarSaldos = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!dataSincronizacao) {
+      setResultadoSincronizacao('Por favor, informe a data de início.');
+      return;
+    }
+
+    try {
+      setSincronizandoSaldos(true);
+      setResultadoSincronizacao(null);
+
+      const { userId } = getUserSession();
+
+      const response = await fetch('/api/sincronizar-saldos', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          dataInicio: dataSincronizacao,
+          userId,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Erro ao sincronizar saldos');
+      }
+
+      setResultadoSincronizacao(
+        `Sincronização concluída com sucesso!\n${data.registrosAtualizados} registros foram atualizados.`
+      );
+
+      // Recarregar o relatório após a sincronização
+      if (usuario && dataReferencia) {
+        setTimeout(() => {
+          carregarRelatorio(usuario, dataReferencia);
+        }, 1000);
+      }
+    } catch (error) {
+      console.error('Erro ao sincronizar saldos:', error);
+      setResultadoSincronizacao(
+        `Erro ao sincronizar saldos: ${error instanceof Error ? error.message : 'Erro desconhecido'}`
+      );
+    } finally {
+      setSincronizandoSaldos(false);
+    }
+  };
+
   if (carregandoUsuario) {
     return (
       <>
@@ -1124,6 +1185,13 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
               onChange={(event) => setDataReferencia(event.target.value)}
               max={toISODate(new Date())}
             />
+            <Button
+              variant="secondary"
+              onClick={handleAbrirModalSincronizacao}
+              disabled={carregandoDados}
+            >
+              Sincronizar Saldos
+            </Button>
             <Button
               variant="secondary"
               onClick={handleAbrirModalEmail}
@@ -1262,6 +1330,86 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
             automaticamente para anexar ao e-mail.
           </p>
           {feedbackEmail && <p className="text-sm text-error-600">{feedbackEmail}</p>}
+        </form>
+      </Modal>
+
+      <Modal
+        isOpen={modalSincronizacaoAberto}
+        onClose={() => {
+          if (!sincronizandoSaldos) {
+            setModalSincronizacaoAberto(false);
+          }
+        }}
+        title="Sincronizar Saldos Diários"
+        size="lg"
+        footer={
+          <div className="flex justify-end gap-3">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setModalSincronizacaoAberto(false)}
+              disabled={sincronizandoSaldos}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              form="sincronizar-saldos-form"
+              variant="primary"
+              loading={sincronizandoSaldos}
+              disabled={sincronizandoSaldos}
+            >
+              Sincronizar
+            </Button>
+          </div>
+        }
+      >
+        <form id="sincronizar-saldos-form" onSubmit={handleSincronizarSaldos} className="space-y-4">
+          <div className="space-y-2">
+            <p className="text-sm text-gray-700">
+              Esta função recalcula e sincroniza os saldos iniciais e finais de todos os dias a partir da data
+              especificada, garantindo que o saldo inicial de cada dia seja igual ao saldo final do dia anterior.
+            </p>
+            <p className="text-sm text-gray-700 font-medium">
+              Use esta ferramenta quando identificar inconsistências entre o saldo final de um dia e o saldo inicial
+              do dia seguinte.
+            </p>
+          </div>
+
+          <Input
+            label="Data de início da sincronização"
+            type="date"
+            value={dataSincronizacao}
+            onChange={(event) => setDataSincronizacao(event.target.value)}
+            placeholder="AAAA-MM-DD"
+            required
+            max={toISODate(new Date())}
+          />
+
+          <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+            <p className="text-sm text-yellow-800">
+              <strong>Atenção:</strong> Esta operação recalculará todos os saldos a partir da data informada. Os
+              valores serão atualizados com base nas receitas, despesas e aplicações registradas.
+            </p>
+          </div>
+
+          {resultadoSincronizacao && (
+            <div
+              className={`rounded-md p-3 ${
+                resultadoSincronizacao.includes('sucesso')
+                  ? 'bg-green-50 border border-green-200'
+                  : 'bg-red-50 border border-red-200'
+              }`}
+            >
+              <p
+                className={`text-sm whitespace-pre-line ${
+                  resultadoSincronizacao.includes('sucesso') ? 'text-green-800' : 'text-red-800'
+                }`}
+              >
+                {resultadoSincronizacao}
+              </p>
+            </div>
+          )}
         </form>
       </Modal>
     </>
