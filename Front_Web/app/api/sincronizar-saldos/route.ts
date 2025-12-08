@@ -39,17 +39,48 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Buscar o usr_id do usuário no banco
-    const { data: usuarioData, error: erroUsuario } = await supabase
+    // Buscar ou criar o usr_id do usuário no banco
+    let { data: usuarioData, error: erroUsuario } = await supabase
       .from('usr_usuarios')
       .select('usr_id')
       .eq('usr_identificador', userId)
-      .single();
+      .maybeSingle();
 
-    if (erroUsuario || !usuarioData) {
+    if (erroUsuario) {
+      console.error('Erro ao buscar usuário:', erroUsuario);
       return NextResponse.json(
-        { error: 'Usuário não encontrado' },
-        { status: 404 }
+        { error: 'Erro ao buscar usuário', details: erroUsuario.message },
+        { status: 500 }
+      );
+    }
+
+    // Se o usuário não existe, criar
+    if (!usuarioData) {
+      const { data: novoUsuario, error: erroCriar } = await supabase
+        .from('usr_usuarios')
+        .insert({
+          usr_identificador: userId,
+          usr_nome: `Usuário ${userId.slice(0, 8)}`,
+          usr_ativo: true,
+        })
+        .select('usr_id')
+        .single();
+
+      if (erroCriar) {
+        console.error('Erro ao criar usuário:', erroCriar);
+        return NextResponse.json(
+          { error: 'Erro ao criar usuário', details: erroCriar.message },
+          { status: 500 }
+        );
+      }
+
+      usuarioData = novoUsuario;
+    }
+
+    if (!usuarioData) {
+      return NextResponse.json(
+        { error: 'Não foi possível obter dados do usuário' },
+        { status: 500 }
       );
     }
 
