@@ -31,58 +31,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Cliente Supabase sem headers para buscar/criar usuário
-    // (a política RLS de usr_usuarios permite SELECT/INSERT para todos)
-    const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
-
-    // Buscar ou criar o usr_id do usuário no banco
-    let { data: usuarioData, error: erroUsuario } = await supabaseAdmin
-      .from('usr_usuarios')
-      .select('usr_id')
-      .eq('usr_identificador', userId)
-      .maybeSingle();
-
-    if (erroUsuario) {
-      console.error('Erro ao buscar usuário:', erroUsuario);
-      return NextResponse.json(
-        { error: 'Erro ao buscar usuário', details: erroUsuario.message },
-        { status: 500 }
-      );
-    }
-
-    // Se o usuário não existe, criar
-    if (!usuarioData) {
-      const { data: novoUsuario, error: erroCriar } = await supabaseAdmin
-        .from('usr_usuarios')
-        .insert({
-          usr_identificador: userId,
-          usr_nome: `Usuário ${userId.slice(0, 8)}`,
-          usr_ativo: true,
-        })
-        .select('usr_id')
-        .single();
-
-      if (erroCriar) {
-        console.error('Erro ao criar usuário:', erroCriar);
-        return NextResponse.json(
-          { error: 'Erro ao criar usuário', details: erroCriar.message },
-          { status: 500 }
-        );
-      }
-
-      usuarioData = novoUsuario;
-    }
-
-    if (!usuarioData) {
-      return NextResponse.json(
-        { error: 'Não foi possível obter dados do usuário' },
-        { status: 500 }
-      );
-    }
-
-    const usrId = usuarioData.usr_id;
-
-    // Cliente Supabase COM headers para operações de dados
+    // Cliente Supabase com header x-user-id
+    // As políticas RLS filtram automaticamente os dados do usuário
     const supabase = createClient(supabaseUrl, supabaseKey, {
       global: {
         headers: {
@@ -95,7 +45,6 @@ export async function POST(request: NextRequest) {
     const { data: saldoDiaAnterior, error: erroSaldoAnterior } = await supabase
       .from('sdd_saldo_diario')
       .select('sdd_saldo_final')
-      .eq('sdd_usr_id', usrId)
       .lt('sdd_data', dataInicio)
       .order('sdd_data', { ascending: false })
       .limit(1)
@@ -110,7 +59,6 @@ export async function POST(request: NextRequest) {
     const { data: registrosSaldo, error: erroRegistros } = await supabase
       .from('sdd_saldo_diario')
       .select('*')
-      .eq('sdd_usr_id', usrId)
       .gte('sdd_data', dataInicio)
       .order('sdd_data', { ascending: true });
 
@@ -133,24 +81,22 @@ export async function POST(request: NextRequest) {
     for (const registro of registrosSaldo) {
       const dataAtual = registro.sdd_data;
 
-      // Buscar receitas do dia
+      // Buscar receitas do dia (RLS filtra automaticamente pelo usuário)
       const { data: receitas, error: erroReceitas } = await supabase
         .from('rec_receitas')
         .select('rec_valor')
-        .eq('rec_data', dataAtual)
-        .eq('rec_usr_id', usrId);
+        .eq('rec_data', dataAtual);
 
       if (erroReceitas) {
         console.error(`Erro ao buscar receitas para ${dataAtual}:`, erroReceitas);
         continue;
       }
 
-      // Buscar despesas do dia (pagamentos por área)
+      // Buscar despesas do dia (RLS filtra automaticamente pelo usuário)
       const { data: despesas, error: erroDespesas } = await supabase
         .from('pag_pagamentos_area')
         .select('pag_valor, are_areas(are_nome)')
-        .eq('pag_data', dataAtual)
-        .eq('pag_usr_id', usrId);
+        .eq('pag_data', dataAtual);
 
       if (erroDespesas) {
         console.error(`Erro ao buscar despesas para ${dataAtual}:`, erroDespesas);
@@ -198,15 +144,14 @@ export async function POST(request: NextRequest) {
         (novoSaldoInicial + totalReceitas - totalDespesas + aplicacoes) * 100
       ) / 100;
 
-      // Atualizar o registro
+      // Atualizar o registro (RLS garante que só atualiza dados do usuário)
       const { error: erroAtualizacao } = await supabase
         .from('sdd_saldo_diario')
         .update({
           sdd_saldo_inicial: novoSaldoInicial,
           sdd_saldo_final: novoSaldoFinal,
         })
-        .eq('sdd_data', dataAtual)
-        .eq('sdd_usr_id', usrId);
+        .eq('sdd_data', dataAtual);
 
       if (erroAtualizacao) {
         console.error(`Erro ao atualizar saldo para ${dataAtual}:`, erroAtualizacao);
