@@ -33,6 +33,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Primeiro, garantir que o usuário existe na tabela usr_usuarios
+    // Fazemos isso sem header para evitar problemas de RLS circular
+    const supabaseNoAuth = createClient(supabaseUrl, supabaseKey);
+
+    console.log('Verificando se usuário existe...');
+    const { data: usuarioExiste } = await supabaseNoAuth
+      .from('usr_usuarios')
+      .select('usr_id')
+      .eq('usr_identificador', userId)
+      .maybeSingle();
+
+    if (!usuarioExiste) {
+      console.log('Usuário não existe, criando...');
+      const { error: erroCriarUsuario } = await supabaseNoAuth
+        .from('usr_usuarios')
+        .insert({
+          usr_identificador: userId,
+          usr_nome: `Usuário ${userId.slice(0, 8)}`,
+          usr_ativo: true,
+        });
+
+      if (erroCriarUsuario) {
+        console.error('Erro ao criar usuário:', erroCriarUsuario);
+        return NextResponse.json(
+          { error: 'Erro ao criar usuário', details: erroCriarUsuario.message },
+          { status: 500 }
+        );
+      }
+      console.log('Usuário criado com sucesso');
+    } else {
+      console.log('Usuário já existe:', usuarioExiste.usr_id);
+    }
+
     // Cliente Supabase com header x-user-id
     // As políticas RLS filtram automaticamente os dados do usuário
     const supabase = createClient(supabaseUrl, supabaseKey, {
