@@ -39,16 +39,34 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Buscar o usr_id do usuário no banco
+    const { data: usuarioData, error: erroUsuario } = await supabase
+      .from('usr_usuarios')
+      .select('usr_id')
+      .eq('usr_identificador', userId)
+      .single();
+
+    if (erroUsuario || !usuarioData) {
+      return NextResponse.json(
+        { error: 'Usuário não encontrado' },
+        { status: 404 }
+      );
+    }
+
+    const usrId = usuarioData.usr_id;
+
     // 1. Buscar o saldo final do dia anterior à data de início
     const { data: saldoDiaAnterior, error: erroSaldoAnterior } = await supabase
       .from('sdd_saldo_diario')
       .select('sdd_saldo_final')
+      .eq('sdd_usr_id', usrId)
       .lt('sdd_data', dataInicio)
       .order('sdd_data', { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (erroSaldoAnterior) {
+      console.error('Erro ao buscar saldo anterior:', erroSaldoAnterior);
       throw erroSaldoAnterior;
     }
 
@@ -56,10 +74,12 @@ export async function POST(request: NextRequest) {
     const { data: registrosSaldo, error: erroRegistros } = await supabase
       .from('sdd_saldo_diario')
       .select('*')
+      .eq('sdd_usr_id', usrId)
       .gte('sdd_data', dataInicio)
       .order('sdd_data', { ascending: true });
 
     if (erroRegistros) {
+      console.error('Erro ao buscar registros de saldo:', erroRegistros);
       throw erroRegistros;
     }
 
@@ -81,7 +101,8 @@ export async function POST(request: NextRequest) {
       const { data: receitas, error: erroReceitas } = await supabase
         .from('rec_receitas')
         .select('rec_valor')
-        .eq('rec_data', dataAtual);
+        .eq('rec_data', dataAtual)
+        .eq('rec_usr_id', usrId);
 
       if (erroReceitas) {
         console.error(`Erro ao buscar receitas para ${dataAtual}:`, erroReceitas);
@@ -92,7 +113,8 @@ export async function POST(request: NextRequest) {
       const { data: despesas, error: erroDespesas } = await supabase
         .from('pag_pagamentos_area')
         .select('pag_valor, are_areas(are_nome)')
-        .eq('pag_data', dataAtual);
+        .eq('pag_data', dataAtual)
+        .eq('pag_usr_id', usrId);
 
       if (erroDespesas) {
         console.error(`Erro ao buscar despesas para ${dataAtual}:`, erroDespesas);
@@ -147,7 +169,8 @@ export async function POST(request: NextRequest) {
           sdd_saldo_inicial: novoSaldoInicial,
           sdd_saldo_final: novoSaldoFinal,
         })
-        .eq('sdd_data', dataAtual);
+        .eq('sdd_data', dataAtual)
+        .eq('sdd_usr_id', usrId);
 
       if (erroAtualizacao) {
         console.error(`Erro ao atualizar saldo para ${dataAtual}:`, erroAtualizacao);
