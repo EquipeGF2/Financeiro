@@ -636,7 +636,8 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
         });
         setErro(null);
 
-        void registrarSaldoDiario(supabase, usuarioAtual, data, resumoCalculado);
+        // Não registrar auditoria automática - deixar para a sincronização manual
+        // void registrarSaldoDiario(supabase, usuarioAtual, data, resumoCalculado);
       } catch (error) {
         console.error('Erro ao carregar relatório de saldo diário:', error);
         setRelatorio(null);
