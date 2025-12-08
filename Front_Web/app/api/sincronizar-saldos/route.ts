@@ -55,13 +55,20 @@ export async function POST(request: NextRequest) {
         });
 
       if (erroCriarUsuario) {
-        console.error('Erro ao criar usuário:', erroCriarUsuario);
-        return NextResponse.json(
-          { error: 'Erro ao criar usuário', details: erroCriarUsuario.message },
-          { status: 500 }
-        );
+        // Se o erro for de chave duplicada (23505), significa que o usuário já existe
+        // Isso pode acontecer em race conditions - não é um erro real
+        if (erroCriarUsuario.code === '23505') {
+          console.log('Usuário já existe (detectado via constraint), continuando...');
+        } else {
+          console.error('Erro ao criar usuário:', erroCriarUsuario);
+          return NextResponse.json(
+            { error: 'Erro ao criar usuário', details: erroCriarUsuario.message },
+            { status: 500 }
+          );
+        }
+      } else {
+        console.log('Usuário criado com sucesso');
       }
-      console.log('Usuário criado com sucesso');
     } else {
       console.log('Usuário já existe:', usuarioExiste.usr_id);
     }
