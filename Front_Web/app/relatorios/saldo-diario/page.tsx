@@ -279,10 +279,9 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
   const [enviandoEmail, setEnviandoEmail] = useState(false);
   const [feedbackEmail, setFeedbackEmail] = useState<string | null>(null);
   const [alertaAuditoria, setAlertaAuditoria] = useState<string | null>(null);
-  const [sincronizandoSaldos, setSincronizandoSaldos] = useState(false);
-  const [modalSincronizacaoAberto, setModalSincronizacaoAberto] = useState(false);
-  const [dataSincronizacao, setDataSincronizacao] = useState('');
-  const [resultadoSincronizacao, setResultadoSincronizacao] = useState<string | null>(null);
+  const [registrandoSaldo, setRegistrandoSaldo] = useState(false);
+  const [modalRegistroAberto, setModalRegistroAberto] = useState(false);
+  const [resultadoRegistro, setResultadoRegistro] = useState<string | null>(null);
 
   const carregarUsuario = useCallback(async () => {
     try {
@@ -1105,60 +1104,48 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
     }
   };
 
-  const handleAbrirModalSincronizacao = () => {
-    setResultadoSincronizacao(null);
-    setDataSincronizacao('');
-    setModalSincronizacaoAberto(true);
+  const handleAbrirModalRegistro = () => {
+    if (!relatorio) {
+      alert('Nenhum relatório disponível para registrar.');
+      return;
+    }
+    setResultadoRegistro(null);
+    setModalRegistroAberto(true);
   };
 
-  const handleSincronizarSaldos = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleRegistrarSaldo = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!dataSincronizacao) {
-      setResultadoSincronizacao('Por favor, informe a data de início.');
+    if (!usuario || !relatorio) {
+      setResultadoRegistro('Não foi possível identificar os dados necessários para o registro.');
       return;
     }
 
     try {
-      setSincronizandoSaldos(true);
-      setResultadoSincronizacao(null);
+      setRegistrandoSaldo(true);
+      setResultadoRegistro(null);
 
-      const { userId } = getUserSession();
+      const supabase = getSupabaseClient();
 
-      const response = await fetch('/api/sincronizar-saldos', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          dataInicio: dataSincronizacao,
-          userId,
-        }),
-      });
+      // Chama a função de registro que já existe
+      await registrarSaldoDiario(supabase, usuario, dataReferencia, relatorio.resumo);
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Erro ao sincronizar saldos');
-      }
-
-      setResultadoSincronizacao(
-        `Sincronização concluída com sucesso!\n${data.registrosAtualizados} registros foram atualizados.`
+      setResultadoRegistro(
+        `Saldo registrado com sucesso para ${formatarDataPt(dataReferencia)}!\n\nSaldo Inicial: ${formatCurrency(relatorio.resumo.saldoInicialRealizado)}\nSaldo Final: ${formatCurrency(relatorio.resumo.saldoFinalRealizado)}`
       );
 
-      // Recarregar o relatório após a sincronização
-      if (usuario && dataReferencia) {
-        setTimeout(() => {
-          carregarRelatorio(usuario, dataReferencia);
-        }, 1000);
-      }
+      // Recarregar o relatório após o registro
+      setTimeout(() => {
+        carregarRelatorio(usuario, dataReferencia);
+        setModalRegistroAberto(false);
+      }, 2000);
     } catch (error) {
-      console.error('Erro ao sincronizar saldos:', error);
-      setResultadoSincronizacao(
-        `Erro ao sincronizar saldos: ${error instanceof Error ? error.message : 'Erro desconhecido'}`
+      console.error('Erro ao registrar saldo:', error);
+      setResultadoRegistro(
+        `Erro ao registrar saldo: ${error instanceof Error ? error.message : 'Erro desconhecido'}`
       );
     } finally {
-      setSincronizandoSaldos(false);
+      setRegistrandoSaldo(false);
     }
   };
 
@@ -1188,10 +1175,10 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
             />
             <Button
               variant="secondary"
-              onClick={handleAbrirModalSincronizacao}
-              disabled={carregandoDados}
+              onClick={handleAbrirModalRegistro}
+              disabled={carregandoDados || !relatorio}
             >
-              Sincronizar Saldos
+              Registrar Saldo
             </Button>
             <Button
               variant="secondary"
@@ -1335,79 +1322,88 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
       </Modal>
 
       <Modal
-        isOpen={modalSincronizacaoAberto}
+        isOpen={modalRegistroAberto}
         onClose={() => {
-          if (!sincronizandoSaldos) {
-            setModalSincronizacaoAberto(false);
+          if (!registrandoSaldo) {
+            setModalRegistroAberto(false);
           }
         }}
-        title="Sincronizar Saldos Diários"
+        title="Registrar Saldo Diário"
         size="lg"
         footer={
           <div className="flex justify-end gap-3">
             <Button
               type="button"
               variant="secondary"
-              onClick={() => setModalSincronizacaoAberto(false)}
-              disabled={sincronizandoSaldos}
+              onClick={() => setModalRegistroAberto(false)}
+              disabled={registrandoSaldo}
             >
               Cancelar
             </Button>
             <Button
               type="submit"
-              form="sincronizar-saldos-form"
+              form="registrar-saldo-form"
               variant="primary"
-              loading={sincronizandoSaldos}
-              disabled={sincronizandoSaldos}
+              loading={registrandoSaldo}
+              disabled={registrandoSaldo}
             >
-              Sincronizar
+              Registrar
             </Button>
           </div>
         }
       >
-        <form id="sincronizar-saldos-form" onSubmit={handleSincronizarSaldos} className="space-y-4">
-          <div className="space-y-2">
+        <form id="registrar-saldo-form" onSubmit={handleRegistrarSaldo} className="space-y-4">
+          <div className="space-y-3">
             <p className="text-sm text-gray-700">
-              Esta função recalcula e sincroniza os saldos iniciais e finais de todos os dias a partir da data
-              especificada, garantindo que o saldo inicial de cada dia seja igual ao saldo final do dia anterior.
+              Você está prestes a registrar o saldo diário para <strong>{formatarDataPt(dataReferencia)}</strong>.
             </p>
-            <p className="text-sm text-gray-700 font-medium">
-              Use esta ferramenta quando identificar inconsistências entre o saldo final de um dia e o saldo inicial
-              do dia seguinte.
+
+            {relatorio && (
+              <div className="bg-blue-50 border border-blue-200 rounded-md p-3 space-y-1">
+                <p className="text-sm text-blue-900">
+                  <strong>Saldo Inicial:</strong> {formatCurrency(relatorio.resumo.saldoInicialRealizado)}
+                </p>
+                <p className="text-sm text-blue-900">
+                  <strong>Receitas do Dia:</strong> {formatCurrency(relatorio.resumo.totalReceitasRealizadas)}
+                </p>
+                <p className="text-sm text-blue-900">
+                  <strong>Despesas do Dia:</strong> {formatCurrency(relatorio.resumo.totalDespesasRealizadas)}
+                </p>
+                <p className="text-sm text-blue-900">
+                  <strong>Aplicações:</strong> {formatCurrency(relatorio.resumo.aplicacoesRealizadas)}
+                </p>
+                <p className="text-sm text-blue-900 font-bold border-t border-blue-300 pt-1 mt-1">
+                  <strong>Saldo Final:</strong> {formatCurrency(relatorio.resumo.saldoFinalRealizado)}
+                </p>
+              </div>
+            )}
+
+            <p className="text-sm text-gray-700">
+              Este registro será usado como base para cálculos futuros e relatórios históricos.
             </p>
+
+            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+              <p className="text-sm text-yellow-800">
+                <strong>Importante:</strong> Certifique-se de que todos os lançamentos do dia estão corretos antes de registrar.
+                Se já existir um registro para esta data, ele será atualizado com os valores atuais.
+              </p>
+            </div>
           </div>
 
-          <Input
-            label="Data de início da sincronização"
-            type="date"
-            value={dataSincronizacao}
-            onChange={(event) => setDataSincronizacao(event.target.value)}
-            placeholder="AAAA-MM-DD"
-            required
-            max={toISODate(new Date())}
-          />
-
-          <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
-            <p className="text-sm text-yellow-800">
-              <strong>Atenção:</strong> Esta operação recalculará todos os saldos a partir da data informada. Os
-              valores serão atualizados com base nas receitas, despesas e aplicações registradas.
-            </p>
-          </div>
-
-          {resultadoSincronizacao && (
+          {resultadoRegistro && (
             <div
               className={`rounded-md p-3 ${
-                resultadoSincronizacao.includes('sucesso')
+                resultadoRegistro.includes('sucesso')
                   ? 'bg-green-50 border border-green-200'
                   : 'bg-red-50 border border-red-200'
               }`}
             >
               <p
                 className={`text-sm whitespace-pre-line ${
-                  resultadoSincronizacao.includes('sucesso') ? 'text-green-800' : 'text-red-800'
+                  resultadoRegistro.includes('sucesso') ? 'text-green-800' : 'text-red-800'
                 }`}
               >
-                {resultadoSincronizacao}
+                {resultadoRegistro}
               </p>
             </div>
           )}
