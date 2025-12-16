@@ -284,6 +284,14 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
   const [registrandoSaldo, setRegistrandoSaldo] = useState(false);
   const [modalRegistroAberto, setModalRegistroAberto] = useState(false);
   const [resultadoRegistro, setResultadoRegistro] = useState<string | null>(null);
+  const [modalConfigPdfAberto, setModalConfigPdfAberto] = useState(false);
+  const [tamanhoPdf, setTamanhoPdf] = useState<'compacto' | 'normal' | 'grande'>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('tamanhoPdfSaldoDiario');
+      return (saved as 'compacto' | 'normal' | 'grande') || 'normal';
+    }
+    return 'normal';
+  });
 
   const carregarUsuario = useCallback(async () => {
     try {
@@ -919,24 +927,67 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
       return null;
     }
 
+    // Configurações de tamanho baseadas na seleção do usuário
+    const configuracoes = {
+      compacto: {
+        margemHorizontal: 7,
+        tituloFontSize: 10,
+        dataFontSize: 6,
+        resumoFontSize: 5.5,
+        espacoResumo: 2,
+        espacoEntreTabelas: 4,
+        tituloTabelaFontSize: 7,
+        tabelaFontSize: 6.5,
+        cellPadding: 0.6,
+        larguraCategoria: 60,
+        larguraMovimento: 75,
+      },
+      normal: {
+        margemHorizontal: 8,
+        tituloFontSize: 11,
+        dataFontSize: 7,
+        resumoFontSize: 6,
+        espacoResumo: 2.5,
+        espacoEntreTabelas: 5,
+        tituloTabelaFontSize: 8,
+        tabelaFontSize: 7,
+        cellPadding: 0.8,
+        larguraCategoria: 65,
+        larguraMovimento: 80,
+      },
+      grande: {
+        margemHorizontal: 10,
+        tituloFontSize: 12,
+        dataFontSize: 8,
+        resumoFontSize: 7,
+        espacoResumo: 3,
+        espacoEntreTabelas: 6,
+        tituloTabelaFontSize: 9,
+        tabelaFontSize: 8,
+        cellPadding: 1,
+        larguraCategoria: 70,
+        larguraMovimento: 85,
+      },
+    };
+
+    const config = configuracoes[tamanhoPdf];
     const doc = new jsPDF('portrait', 'mm', 'a4');
-    const margemHorizontal = 8;
-    const larguraUtil = doc.internal.pageSize.getWidth() - margemHorizontal * 2;
+    const larguraUtil = doc.internal.pageSize.getWidth() - config.margemHorizontal * 2;
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11);
-    doc.text('Saldo Diário', margemHorizontal, 10);
+    doc.setFontSize(config.tituloFontSize);
+    doc.text('Saldo Diário', config.margemHorizontal, 10);
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(7);
-    doc.text(`Data: ${formatarDataPt(relatorio.data)}`, margemHorizontal, 14);
+    doc.setFontSize(config.dataFontSize);
+    doc.text(`Data: ${formatarDataPt(relatorio.data)}`, config.margemHorizontal, 14);
 
     const resumoLinha = `Saldo Inicial: ${formatCurrency(relatorio.resumo.saldoInicialRealizado)} | Rec: ${formatCurrency(relatorio.resumo.totalReceitasRealizadas)} | Desp: ${formatCurrency(relatorio.resumo.totalDespesasRealizadas)} | Saldo do dia: ${formatCurrency(relatorio.resumo.resultadoRealizado)} | Bancos: ${formatCurrency(relatorio.resumo.bancosRealizados)}`;
-    doc.setFontSize(6);
+    doc.setFontSize(config.resumoFontSize);
     const resumoQuebrado = doc.splitTextToSize(resumoLinha, larguraUtil);
-    doc.text(resumoQuebrado, margemHorizontal, 17);
+    doc.text(resumoQuebrado, config.margemHorizontal, 17);
 
-    let posicaoAtual = 17 + resumoQuebrado.length * 2.5;
+    let posicaoAtual = 17 + resumoQuebrado.length * config.espacoResumo;
 
     type TabelaPdfOptions = {
       layout?: 'comparativo' | 'realizado';
@@ -950,11 +1001,11 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
       linhas: LinhaTabela[],
       { layout = 'comparativo', accent = 'azul', totalLabel, showTotals }: TabelaPdfOptions = {},
     ) => {
-      posicaoAtual += 5;
+      posicaoAtual += config.espacoEntreTabelas;
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
-      doc.text(titulo, margemHorizontal, posicaoAtual);
+      doc.setFontSize(config.tituloTabelaFontSize);
+      doc.text(titulo, config.margemHorizontal, posicaoAtual);
 
       const cabecalho =
         layout === 'comparativo'
@@ -1023,21 +1074,21 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
         body: corpo,
         foot: rodape,
         theme: 'grid',
-        styles: { fontSize: 7, cellPadding: 0.8, halign: 'right', lineWidth: 0.1, lineColor: [0, 0, 0] },
+        styles: { fontSize: config.tabelaFontSize, cellPadding: config.cellPadding, halign: 'right', lineWidth: 0.1, lineColor: [0, 0, 0] },
         headStyles: {
           fillColor: tabelaAccentPdfColors[accent] ?? tabelaAccentPdfColors.azul,
           textColor: 255,
           fontStyle: 'bold',
           halign: 'center',
-          fontSize: 7,
+          fontSize: config.tabelaFontSize,
         },
         bodyStyles: { halign: 'right' },
         alternateRowStyles: { fillColor: [248, 250, 252] },
         columnStyles: {
-          0: { halign: 'left', cellWidth: layout === 'comparativo' ? 65 : 80 }
+          0: { halign: 'left', cellWidth: layout === 'comparativo' ? config.larguraCategoria : config.larguraMovimento }
         },
-        margin: { left: margemHorizontal, right: margemHorizontal },
-        footStyles: { fontStyle: 'bold', fillColor: [255, 255, 255], textColor: [33, 37, 41], fontSize: 7 },
+        margin: { left: config.margemHorizontal, right: config.margemHorizontal },
+        footStyles: { fontStyle: 'bold', fillColor: [255, 255, 255], textColor: [33, 37, 41], fontSize: config.tabelaFontSize },
         tableLineWidth: 0.3,
         tableLineColor: [0, 0, 0],
       });
@@ -1074,22 +1125,33 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
     });
 
     return doc;
-  }, [relatorio, linhasResultadoCaixa, linhasResumoGeral]);
+  }, [relatorio, linhasResultadoCaixa, linhasResumoGeral, tamanhoPdf]);
 
-  const handleExportPdf = useCallback(() => {
+  const handleAbrirModalConfigPdf = useCallback(() => {
     if (!relatorio) {
       alert('Nenhum relatório disponível para exportar.');
       return;
     }
+    setModalConfigPdfAberto(true);
+  }, [relatorio]);
 
+  const handleSelecionarTamanhoPdf = (tamanho: 'compacto' | 'normal' | 'grande') => {
+    setTamanhoPdf(tamanho);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('tamanhoPdfSaldoDiario', tamanho);
+    }
+  };
+
+  const handleExportPdf = useCallback(() => {
     const doc = gerarDocumentoPdf();
     if (!doc) {
       alert('Não foi possível gerar o PDF. Tente novamente.');
       return;
     }
 
-    const nomeArquivo = `Saldo_Diario_${relatorio.data.replace(/-/g, '')}.pdf`;
+    const nomeArquivo = `Saldo_Diario_${relatorio!.data.replace(/-/g, '')}.pdf`;
     doc.save(nomeArquivo);
+    setModalConfigPdfAberto(false);
   }, [gerarDocumentoPdf, relatorio]);
 
   const handleAbrirModalEmail = () => {
@@ -1239,7 +1301,7 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
             >
               Enviar por e-mail
             </Button>
-            <Button variant="primary" onClick={handleExportPdf} disabled={!relatorio || carregandoDados}>
+            <Button variant="primary" onClick={handleAbrirModalConfigPdf} disabled={!relatorio || carregandoDados}>
               Exportar PDF
             </Button>
           </div>
@@ -1467,6 +1529,124 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
             </div>
           )}
         </form>
+      </Modal>
+
+      <Modal
+        isOpen={modalConfigPdfAberto}
+        onClose={() => setModalConfigPdfAberto(false)}
+        title="Configurar Tamanho do PDF"
+        size="md"
+        footer={
+          <div className="flex justify-end gap-3">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setModalConfigPdfAberto(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={handleExportPdf}
+            >
+              Gerar PDF
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-700">
+            Escolha o tamanho do relatório para melhor visualização. Esta preferência será salva para as próximas gerações.
+          </p>
+
+          <div className="space-y-3">
+            <label
+              className={`flex items-start p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                tamanhoPdf === 'compacto'
+                  ? 'border-red-600 bg-red-50'
+                  : 'border-gray-200 bg-white hover:border-gray-300'
+              }`}
+            >
+              <input
+                type="radio"
+                name="tamanhoPdf"
+                value="compacto"
+                checked={tamanhoPdf === 'compacto'}
+                onChange={() => handleSelecionarTamanhoPdf('compacto')}
+                className="mt-1 mr-3"
+              />
+              <div className="flex-1">
+                <div className="font-semibold text-gray-900">Compacto</div>
+                <div className="text-sm text-gray-600 mt-1">
+                  Fontes menores e espaçamento reduzido. Ideal para quando há muitas informações e você precisa garantir que tudo caiba em uma página.
+                </div>
+                <div className="text-xs text-gray-500 mt-2">
+                  • Fonte: 6.5pt • Margem: 7mm • Espaçamento: Mínimo
+                </div>
+              </div>
+            </label>
+
+            <label
+              className={`flex items-start p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                tamanhoPdf === 'normal'
+                  ? 'border-red-600 bg-red-50'
+                  : 'border-gray-200 bg-white hover:border-gray-300'
+              }`}
+            >
+              <input
+                type="radio"
+                name="tamanhoPdf"
+                value="normal"
+                checked={tamanhoPdf === 'normal'}
+                onChange={() => handleSelecionarTamanhoPdf('normal')}
+                className="mt-1 mr-3"
+              />
+              <div className="flex-1">
+                <div className="font-semibold text-gray-900">Normal (Recomendado)</div>
+                <div className="text-sm text-gray-600 mt-1">
+                  Tamanho equilibrado entre legibilidade e aproveitamento do espaço. Adequado para a maioria dos casos.
+                </div>
+                <div className="text-xs text-gray-500 mt-2">
+                  • Fonte: 7pt • Margem: 8mm • Espaçamento: Médio
+                </div>
+              </div>
+            </label>
+
+            <label
+              className={`flex items-start p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                tamanhoPdf === 'grande'
+                  ? 'border-red-600 bg-red-50'
+                  : 'border-gray-200 bg-white hover:border-gray-300'
+              }`}
+            >
+              <input
+                type="radio"
+                name="tamanhoPdf"
+                value="grande"
+                checked={tamanhoPdf === 'grande'}
+                onChange={() => handleSelecionarTamanhoPdf('grande')}
+                className="mt-1 mr-3"
+              />
+              <div className="flex-1">
+                <div className="font-semibold text-gray-900">Grande</div>
+                <div className="text-sm text-gray-600 mt-1">
+                  Fontes maiores e mais espaçamento. Melhor legibilidade quando há poucas informações ou para impressão de visualização rápida.
+                </div>
+                <div className="text-xs text-gray-500 mt-2">
+                  • Fonte: 8pt • Margem: 10mm • Espaçamento: Amplo
+                </div>
+              </div>
+            </label>
+          </div>
+
+          <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+            <p className="text-sm text-yellow-800">
+              <strong>Dica:</strong> Use o tamanho <strong>Compacto</strong> quando o relatório tiver muitos itens
+              e o tamanho <strong>Grande</strong> quando tiver poucos itens para melhor visualização.
+            </p>
+          </div>
+        </div>
       </Modal>
     </>
   );
