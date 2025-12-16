@@ -559,11 +559,21 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
         Array.from(receitasUnicas.values()).forEach((item) => {
           const contaRel = normalizeRelation(item.ctr_contas_receita)[0];
           const contaId = toString(item.rec_ctr_id, 'sem-conta');
+          const codigoConta = contaRel?.ctr_codigo ? toString(contaRel.ctr_codigo) : '';
           const tituloConta = montarTituloContaReceita(contaRel, 'Conta não informada');
-          const chave = `${contaId}-${tituloConta.toLowerCase()}`;
-          const existente = mapaReceitas.get(chave) ?? { titulo: tituloConta, previsto: 0, realizado: 0 };
-          existente.realizado += arredondar(toNumber(item.rec_valor));
-          mapaReceitas.set(chave, existente);
+          const valor = arredondar(toNumber(item.rec_valor));
+
+          // Verificar se é a conta RESGATE APLICACAO (203)
+          if (codigoConta === '203') {
+            // Adicionar ao saldo de aplicações (valor positivo = resgate)
+            aplicacoesRealizadas += valor;
+          } else {
+            // Adicionar normalmente nas receitas por categoria
+            const chave = `${contaId}-${tituloConta.toLowerCase()}`;
+            const existente = mapaReceitas.get(chave) ?? { titulo: tituloConta, previsto: 0, realizado: 0 };
+            existente.realizado += valor;
+            mapaReceitas.set(chave, existente);
+          }
         });
 
         normalizeRelation(saldosBancarios).forEach((item) => {
@@ -838,7 +848,7 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
       return [];
     }
     const { resumo } = relatorio;
-    return [
+    const linhas: LinhaRealizada[] = [
       {
         chave: 'saldo-anterior',
         titulo: 'Saldo do Dia Anterior',
@@ -849,17 +859,32 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
         titulo: 'Resultado do Dia (Receitas - Despesas)',
         realizado: resumo.resultadoRealizado,
       },
-      {
-        chave: 'aplicacoes',
-        titulo: resumo.aplicacoesRealizadas < 0 ? 'Transferência para aplicação' : 'Resgate aplicação',
-        realizado: resumo.aplicacoesRealizadas,
-      },
-      {
-        chave: 'saldo-final',
-        titulo: 'Saldo Final do Dia',
-        realizado: resumo.saldoFinalRealizado,
-      },
     ];
+
+    // Adicionar linhas de aplicação/resgate
+    if (resumo.aplicacoesRealizadas < 0) {
+      linhas.push({
+        chave: 'transferencia-aplicacao',
+        titulo: 'Transferência para Aplicação',
+        realizado: resumo.aplicacoesRealizadas,
+      });
+    }
+
+    if (resumo.aplicacoesRealizadas > 0) {
+      linhas.push({
+        chave: 'resgate-aplicacao',
+        titulo: 'Resgate Aplicação',
+        realizado: resumo.aplicacoesRealizadas,
+      });
+    }
+
+    linhas.push({
+      chave: 'saldo-final',
+      titulo: 'Saldo Final do Dia',
+      realizado: resumo.saldoFinalRealizado,
+    });
+
+    return linhas;
   }, [relatorio]);
 
   const gerarDocumentoPdf = useCallback(() => {
@@ -868,23 +893,23 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
     }
 
     const doc = new jsPDF('portrait', 'mm', 'a4');
-    const margemHorizontal = 10;
+    const margemHorizontal = 8;
     const larguraUtil = doc.internal.pageSize.getWidth() - margemHorizontal * 2;
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.text('Saldo Diário', margemHorizontal, 12);
+    doc.setFontSize(11);
+    doc.text('Saldo Diário', margemHorizontal, 10);
 
     doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.text(`Data: ${formatarDataPt(relatorio.data)}`, margemHorizontal, 17);
+    doc.setFontSize(7);
+    doc.text(`Data: ${formatarDataPt(relatorio.data)}`, margemHorizontal, 14);
 
     const resumoLinha = `Saldo Inicial: ${formatCurrency(relatorio.resumo.saldoInicialRealizado)} | Rec: ${formatCurrency(relatorio.resumo.totalReceitasRealizadas)} | Desp: ${formatCurrency(relatorio.resumo.totalDespesasRealizadas)} | Saldo do dia: ${formatCurrency(relatorio.resumo.resultadoRealizado)} | Bancos: ${formatCurrency(relatorio.resumo.bancosRealizados)}`;
-    doc.setFontSize(7);
+    doc.setFontSize(6);
     const resumoQuebrado = doc.splitTextToSize(resumoLinha, larguraUtil);
-    doc.text(resumoQuebrado, margemHorizontal, 21);
+    doc.text(resumoQuebrado, margemHorizontal, 17);
 
-    let posicaoAtual = 21 + resumoQuebrado.length * 3.5;
+    let posicaoAtual = 17 + resumoQuebrado.length * 2.5;
 
     type TabelaPdfOptions = {
       layout?: 'comparativo' | 'realizado';
@@ -898,10 +923,10 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
       linhas: LinhaTabela[],
       { layout = 'comparativo', accent = 'azul', totalLabel, showTotals }: TabelaPdfOptions = {},
     ) => {
-      posicaoAtual += 10;
+      posicaoAtual += 5;
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
+      doc.setFontSize(8);
       doc.text(titulo, margemHorizontal, posicaoAtual);
 
       const cabecalho =
@@ -966,27 +991,27 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
           : undefined;
 
       autoTable(doc, {
-        startY: posicaoAtual + 1.5,
+        startY: posicaoAtual + 1,
         head: cabecalho,
         body: corpo,
         foot: rodape,
         theme: 'grid',
-        styles: { fontSize: 9, cellPadding: 1.5, halign: 'right', lineWidth: 0.1, lineColor: [0, 0, 0] },
+        styles: { fontSize: 7, cellPadding: 0.8, halign: 'right', lineWidth: 0.1, lineColor: [0, 0, 0] },
         headStyles: {
           fillColor: tabelaAccentPdfColors[accent] ?? tabelaAccentPdfColors.azul,
           textColor: 255,
           fontStyle: 'bold',
           halign: 'center',
-          fontSize: 9,
+          fontSize: 7,
         },
         bodyStyles: { halign: 'right' },
         alternateRowStyles: { fillColor: [248, 250, 252] },
         columnStyles: {
-          0: { halign: 'left', cellWidth: 75 }
+          0: { halign: 'left', cellWidth: layout === 'comparativo' ? 65 : 80 }
         },
         margin: { left: margemHorizontal, right: margemHorizontal },
-        footStyles: { fontStyle: 'bold', fillColor: [255, 255, 255], textColor: [33, 37, 41], fontSize: 9 },
-        tableLineWidth: 0.5,
+        footStyles: { fontStyle: 'bold', fillColor: [255, 255, 255], textColor: [33, 37, 41], fontSize: 7 },
+        tableLineWidth: 0.3,
         tableLineColor: [0, 0, 0],
       });
 
