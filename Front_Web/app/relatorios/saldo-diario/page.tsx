@@ -121,6 +121,8 @@ type RelatorioSaldoDiario = {
     bancosPrevistos: number;
     bancosRealizados: number;
     aplicacoesRealizadas: number;
+    resgatesTotais: number;
+    transferenciasTotais: number;
   };
 };
 
@@ -505,11 +507,6 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
           }
         });
 
-        // Calcular aplicações realizadas separadamente
-        // Transferência para aplicação: negativo (saída)
-        // Resgate de aplicação: positivo (entrada)
-        let aplicacoesRealizadas = 0;
-
         normalizeRelation(pagamentosArea).forEach((item) => {
           const areaId = toString(item.pag_are_id, 'sem-area');
           const areaRel = normalizeRelation(item.are_areas)[0];
@@ -521,27 +518,13 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
           const tituloNormalizado = titulo.trim().toUpperCase();
           const ehAplicacao = tituloNormalizado.includes('APLICACAO') || tituloNormalizado.includes('APLICAÇÃO');
 
-          if (ehAplicacao) {
-            // Verificar se é transferência (saída) ou resgate (entrada)
-            const ehResgate = tituloNormalizado.includes('RESGATE');
-            const ehTransferencia = tituloNormalizado.includes('TRANSFERENCIA') || tituloNormalizado.includes('TRANSFERÊNCIA');
-
-            if (ehResgate) {
-              // Resgate: valor positivo (entrada de dinheiro)
-              aplicacoesRealizadas += valor;
-            } else if (ehTransferencia) {
-              // Transferência: valor negativo (saída de dinheiro)
-              aplicacoesRealizadas -= valor;
-            } else {
-              // Se não especificado, assumir transferência (saída)
-              aplicacoesRealizadas -= valor;
-            }
-          } else {
+          if (!ehAplicacao) {
             // Se NÃO for aplicação, adicionar normalmente em gastos por área
             const existente = mapaGastos.get(chave) ?? { titulo, previsto: 0, realizado: 0 };
             existente.realizado += valor;
             mapaGastos.set(chave, existente);
           }
+          // Se for aplicação, será processado depois separadamente
         });
 
         // Remover duplicatas usando um Set para rastrear rec_id únicos
@@ -564,10 +547,8 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
           const valor = arredondar(toNumber(item.rec_valor));
 
           // Verificar se é a conta RESGATE APLICACAO (203)
-          if (codigoConta === '203') {
-            // Adicionar ao saldo de aplicações (valor positivo = resgate)
-            aplicacoesRealizadas += valor;
-          } else {
+          // Se for, não adicionar às receitas (será processado depois como resgate)
+          if (codigoConta !== '203') {
             // Adicionar normalmente nas receitas por categoria
             const chave = `${contaId}-${tituloConta.toLowerCase()}`;
             const existente = mapaReceitas.get(chave) ?? { titulo: tituloConta, previsto: 0, realizado: 0 };
@@ -587,6 +568,50 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
           existente.realizado += arredondar(toNumber(item.sdb_saldo));
           mapaBancos.set(chave, existente);
         });
+
+        // Separar aplicações em resgates e transferências para mostrar individualmente
+        let resgatesTotais = 0;
+        let transferenciasTotais = 0;
+
+        // Processar pagamentos por área novamente para separar resgates e transferências
+        normalizeRelation(pagamentosArea).forEach((item) => {
+          const areaRel = normalizeRelation(item.are_areas)[0];
+          const titulo = areaRel?.are_nome ? toString(areaRel.are_nome) : 'Área não informada';
+          const valor = arredondar(toNumber(item.pag_valor));
+
+          const tituloNormalizado = titulo.trim().toUpperCase();
+          const ehAplicacao = tituloNormalizado.includes('APLICACAO') || tituloNormalizado.includes('APLICAÇÃO');
+
+          if (ehAplicacao) {
+            const ehResgate = tituloNormalizado.includes('RESGATE');
+            const ehTransferencia = tituloNormalizado.includes('TRANSFERENCIA') || tituloNormalizado.includes('TRANSFERÊNCIA');
+
+            if (ehResgate) {
+              resgatesTotais += valor;
+            } else if (ehTransferencia) {
+              transferenciasTotais += valor;
+            } else {
+              transferenciasTotais += valor;
+            }
+          }
+        });
+
+        // Adicionar resgates da conta 203 (RESGATE APLICACAO)
+        Array.from(receitasUnicas.values()).forEach((item) => {
+          const contaRel = normalizeRelation(item.ctr_contas_receita)[0];
+          const codigoConta = contaRel?.ctr_codigo ? toString(contaRel.ctr_codigo) : '';
+          const valor = arredondar(toNumber(item.rec_valor));
+
+          if (codigoConta === '203') {
+            resgatesTotais += valor;
+          }
+        });
+
+        resgatesTotais = arredondar(resgatesTotais);
+        transferenciasTotais = arredondar(transferenciasTotais);
+
+        // Calcular saldo líquido de aplicações (resgates - transferências)
+        const aplicacoesRealizadas = arredondar(resgatesTotais - transferenciasTotais);
 
         const gastos = converterMapaParaLinhas(mapaGastos, true);
         const receitasComparativo = converterMapaParaLinhas(mapaReceitas, false);
@@ -634,6 +659,8 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
           bancosPrevistos: totalBancosPrevistos,
           bancosRealizados: totalBancosRealizados,
           aplicacoesRealizadas: arredondar(aplicacoesRealizadas),
+          resgatesTotais,
+          transferenciasTotais,
         };
 
         setRelatorio({
@@ -861,20 +888,20 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
       },
     ];
 
-    // Adicionar linhas de aplicação/resgate
-    if (resumo.aplicacoesRealizadas < 0) {
-      linhas.push({
-        chave: 'transferencia-aplicacao',
-        titulo: 'Transferência para Aplicação',
-        realizado: resumo.aplicacoesRealizadas,
-      });
-    }
-
-    if (resumo.aplicacoesRealizadas > 0) {
+    // Adicionar linhas de aplicação/resgate separadamente
+    if (resumo.resgatesTotais > 0) {
       linhas.push({
         chave: 'resgate-aplicacao',
         titulo: 'Resgate Aplicação',
-        realizado: resumo.aplicacoesRealizadas,
+        realizado: resumo.resgatesTotais,
+      });
+    }
+
+    if (resumo.transferenciasTotais > 0) {
+      linhas.push({
+        chave: 'transferencia-aplicacao',
+        titulo: 'Transferência para Aplicação',
+        realizado: -resumo.transferenciasTotais, // Negativo porque é saída
       });
     }
 
@@ -1394,9 +1421,16 @@ const RelatorioSaldoDiarioPage: React.FC = () => {
                 <p className="text-sm text-blue-900">
                   <strong>Despesas do Dia:</strong> {formatCurrency(relatorio.resumo.totalDespesasRealizadas)}
                 </p>
-                <p className="text-sm text-blue-900">
-                  <strong>Aplicações:</strong> {formatCurrency(relatorio.resumo.aplicacoesRealizadas)}
-                </p>
+                {relatorio.resumo.resgatesTotais > 0 && (
+                  <p className="text-sm text-blue-900">
+                    <strong>Resgate Aplicação:</strong> {formatCurrency(relatorio.resumo.resgatesTotais)}
+                  </p>
+                )}
+                {relatorio.resumo.transferenciasTotais > 0 && (
+                  <p className="text-sm text-blue-900">
+                    <strong>Transferência para Aplicação:</strong> {formatCurrency(-relatorio.resumo.transferenciasTotais)}
+                  </p>
+                )}
                 <p className="text-sm text-blue-900 font-bold border-t border-blue-300 pt-1 mt-1">
                   <strong>Saldo Final:</strong> {formatCurrency(relatorio.resumo.saldoFinalRealizado)}
                 </p>
